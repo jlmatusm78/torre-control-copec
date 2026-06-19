@@ -595,6 +595,24 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
+st.subheader("Evolución Fatiga / Somnolencia: Cumple vs No cumple")
+if not fatigue_valid.empty:
+    fatigue_evo = fatigue_valid.assign(
+        FechaDia=pd.to_datetime(fatigue_valid["FechaDia"], errors="coerce"),
+        Estado=fatigue_valid[CUMPL_COL].map({"SI":"Cumple","NO":"No cumple"})
+    )
+    evo=(fatigue_evo.groupby(["FechaDia","Estado"]).size().reset_index(name="Eventos"))
+    fig = px.bar(
+        evo,
+        x="FechaDia",
+        y="Eventos",
+        color="Estado",
+        barmode="group",
+        color_discrete_map=FATIGUE_COLORS,
+        template=PLOTLY_TEMPLATE,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 st.markdown("### 📋 Tablas ejecutivas")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
