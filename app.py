@@ -613,7 +613,7 @@ if not fatigue_valid.empty:
     "Cumple": "#059669",
     "No cumple": "#DC2626"
 },
-        template=PLOTLY_TEMPLATE,
+        template="plotly_white",
     )
     st.plotly_chart(fig, use_container_width=True)
 
