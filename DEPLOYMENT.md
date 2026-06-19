@@ -1,23 +1,34 @@
-# Despliegue
+# Despliegue Torre de Control COPEC
 
 ## Google Cloud
 Activa:
 - Google Sheets API
 - Google Drive API
 
-Crea una cuenta de servicio y genera JSON.
+Crea una cuenta de servicio y descarga el JSON.
 
 ## Google Sheets
-Comparte el Sheet con el `client_email` de la cuenta de servicio como Lector.
+Comparte el Google Sheet con el `client_email` de la cuenta de servicio como Lector.
 
 ## Streamlit Secrets
-Usa el ejemplo `.streamlit/secrets.toml.example`.
 
-Si la hoja se llama `FlotaGo`, deja:
+Usa el formato del archivo `.streamlit/secrets.toml.example`.
+
+Si tus hojas se llaman:
+- `GUARDIAN`
+- `FLOTAGO`
+
+usa:
+
 ```toml
-flotago_worksheet_name = "FlotaGo"
+[google_sheet]
+spreadsheet_id = "ID_DE_TU_GOOGLE_SHEET"
+guardian_worksheet_name = "GUARDIAN"
+flotago_worksheet_name = "FLOTAGO"
 ```
 
 ## Streamlit Cloud
-- Main file: `app.py`
-- Reboot/Redeploy después de configurar secrets.
+
+- Main file path: `app.py`
+- Luego configura Secrets
+- Presiona Reboot app
