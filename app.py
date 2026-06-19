@@ -308,19 +308,52 @@ with g5:
     st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("Alertas por día")
-daily = (
-    filtered.assign(FechaDia=pd.to_datetime(filtered["FechaDia"], errors="coerce").dt.strftime("%Y-%m-%d"))
-    .dropna(subset=["FechaDia"])
-    .groupby(["FechaDia","Plataforma"])
-    .size()
-    .reset_index(name="Alertas")
-    .sort_values("FechaDia")
+
+date_index = pd.date_range(start=start_date, end=end_date, freq="D")
+platforms_active = sorted(filtered["Plataforma"].dropna().unique().tolist())
+
+if platforms_active:
+    full_index = pd.MultiIndex.from_product(
+        [date_index, platforms_active],
+        names=["FechaDia", "Plataforma"]
+    )
+
+    daily_counts = (
+        filtered.assign(FechaDia=pd.to_datetime(filtered["FechaDia"], errors="coerce"))
+        .dropna(subset=["FechaDia"])
+        .groupby([pd.Grouper(key="FechaDia", freq="D"), "Plataforma"])
+        .size()
+        .rename("Alertas")
+    )
+
+    daily = daily_counts.reindex(full_index, fill_value=0).reset_index()
+else:
+    daily = pd.DataFrame(columns=["FechaDia","Plataforma","Alertas"])
+
+fig = px.line(
+    daily,
+    x="FechaDia",
+    y="Alertas",
+    color="Plataforma",
+    markers=True,
+    color_discrete_sequence=COLOR_SEQUENCE
 )
-fig = px.line(daily, x="FechaDia", y="Alertas", color="Plataforma", markers=True, text="Alertas")
-fig.update_xaxes(type="category", title_text="Fecha")
+
+fig.update_xaxes(
+    type="date",
+    title_text="Fecha",
+    tickformat="%d-%m",
+    dtick=7 * 24 * 60 * 60 * 1000,
+    tickangle=-45
+)
+
 fig.update_yaxes(title_text="Alertas", rangemode="tozero")
-fig.update_traces(textposition="top center")
-fig.update_layout(height=380, margin=dict(l=10,r=10,t=30,b=70))
+fig.update_layout(
+    height=420,
+    margin=dict(l=10,r=10,t=30,b=90),
+    hovermode="x unified"
+)
+
 st.plotly_chart(fig, use_container_width=True)
 
 
