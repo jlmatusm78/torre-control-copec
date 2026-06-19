@@ -404,8 +404,9 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 fatigue = filtered[filtered["EsFatiga"]]
-cumple = int((fatigue[CUMPL_COL] == "SI").sum())
-no_cumple = int((fatigue[CUMPL_COL] == "NO").sum())
+fatigue_valid = fatigue[fatigue[CUMPL_COL].isin(["SI","NO"])].copy()
+cumple = int((fatigue_valid[CUMPL_COL] == "SI").sum())
+no_cumple = int((fatigue_valid[CUMPL_COL] == "NO").sum())
 score = risk_score(filtered)
 level, css_class = risk_level(score)
 
@@ -420,7 +421,7 @@ with c3:
 with c4:
     metric_card("Conductores", filtered["Conductor"].nunique(), "Con alertas")
 with c5:
-    metric_card("Fatiga / Somnolencia", len(fatigue), "Eventos")
+    metric_card("Fatiga / Somnolencia", len(fatigue_valid), "Cumple o No cumple")
 with c6:
     metric_card("No cumple", no_cumple, "Sin detención")
 with c7:
