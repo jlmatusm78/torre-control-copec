@@ -331,12 +331,21 @@ if not fatigue_valid.empty:
         Estado=fatigue_valid[CUMPL_COL].map({"SI":"Cumple","NO":"No cumple"})
     )
 
-    evo = (
-        fatigue_evo.groupby(["FechaDia","Estado"])
-        .size()
-        .reset_index(name="Eventos")
-        .sort_values("FechaDia")
+    date_index = pd.date_range(start=start_date, end=end_date, freq="D")
+
+    full_index = pd.MultiIndex.from_product(
+        [date_index, ["Cumple", "No cumple"]],
+        names=["FechaDia", "Estado"]
     )
+
+    evo_counts = (
+        fatigue_evo
+        .groupby([pd.Grouper(key="FechaDia", freq="D"), "Estado"])
+        .size()
+        .rename("Eventos")
+    )
+
+    evo = evo_counts.reindex(full_index, fill_value=0).reset_index()
 
     fig = px.line(
         evo,
@@ -358,7 +367,7 @@ if not fatigue_valid.empty:
         legend_title="Resultado"
     )
 
-    fig.update_traces(text=evo["Eventos"], textposition="top center")
+    
 
     st.plotly_chart(fig, use_container_width=True)
 
