@@ -303,48 +303,55 @@ with g5:
     st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("Alertas por día")
-daily = (
-    filtered.assign(FechaDia=pd.to_datetime(filtered["FechaDia"], errors="coerce").dt.strftime("%Y-%m-%d"))
-    .dropna(subset=["FechaDia"])
-    .groupby(["FechaDia","Plataforma"])
-    .size()
-    .reset_index(name="Alertas")
-    .sort_values("FechaDia")
+
+date_index = pd.date_range(start=start_date, end=end_date, freq="D")
+platforms_active = sorted(filtered["Plataforma"].dropna().unique().tolist())
+
+if not platforms_active:
+    daily = pd.DataFrame(columns=["FechaDia", "Plataforma", "Alertas"])
+else:
+    full_index = pd.MultiIndex.from_product(
+        [date_index, platforms_active],
+        names=["FechaDia", "Plataforma"]
+    )
+
+    daily_counts = (
+        filtered.assign(FechaDia=pd.to_datetime(filtered["FechaDia"], errors="coerce"))
+        .dropna(subset=["FechaDia"])
+        .groupby([pd.Grouper(key="FechaDia", freq="D"), "Plataforma"])
+        .size()
+        .rename("Alertas")
+    )
+
+    daily = daily_counts.reindex(full_index, fill_value=0).reset_index()
+
+fig = px.line(
+    daily,
+    x="FechaDia",
+    y="Alertas",
+    color="Plataforma",
+    markers=True,
 )
-fig = px.line(daily, x="FechaDia", y="Alertas", color="Plataforma", markers=True, text="Alertas")
-fig.update_xaxes(type="category", title_text="Fecha")
-fig.update_yaxes(title_text="Alertas", rangemode="tozero")
-fig.update_traces(textposition="top center")
-fig.update_layout(height=380, margin=dict(l=10,r=10,t=30,b=70))
+
+fig.update_xaxes(
+    type="date",
+    title_text="Fecha",
+    tickformat="%d-%m-%Y",
+    dtick="D1",
+)
+
+fig.update_yaxes(
+    title_text="Alertas",
+    rangemode="tozero",
+)
+
+fig.update_layout(
+    height=420,
+    margin=dict(l=10, r=10, t=30, b=90),
+    xaxis_tickangle=-45,
+)
+
 st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("### 📋 Tablas ejecutivas")
-tab1,tab2,tab3,tab4,tab5 = st.tabs(["Ranking transportistas","Ranking conductores","Gestión fatiga","Resumen plataforma","Datos filtrados"])
-
-with tab1:
-    tr = transportista_ranking(filtered)
-    st.dataframe(tr, use_container_width=True, hide_index=True)
-with tab2:
-    dr = driver_ranking(filtered)
-    st.dataframe(dr, use_container_width=True, hide_index=True)
-with tab3:
-    if fatigue.empty:
-        st.info("No hay eventos de fatiga para los filtros seleccionados.")
-        fs = pd.DataFrame()
-    else:
-        fs = (
-            fatigue.groupby(["Plataforma","Conductor"])[CUMPL_COL]
-            .agg(Eventos="count", Cumple=lambda s:int((s=="SI").sum()), No_cumple=lambda s:int((s=="NO").sum()), Sin_info=lambda s:int((~s.isin(["SI","NO"])).sum()))
-            .reset_index()
-            .sort_values(["No_cumple","Eventos"], ascending=False)
-        )
-        st.dataframe(fs, use_container_width=True, hide_index=True)
-with tab4:
-    ps = filtered.groupby("Plataforma").agg(Alertas=("Incidente","count"), Transportistas=("Transportista","nunique"), Conductores=("Conductor","nunique"), Eventos_fatiga=("EsFatiga","sum")).reset_index()
-    st.dataframe(ps, use_container_width=True, hide_index=True)
-with tab5:
-    cols = [c for c in ["Fecha","Plataforma","Transportista","Conductor","Patente","Planta","Incidente",CUMPL_COL] if c in filtered.columns]
-    st.dataframe(filtered[cols], use_container_width=True, hide_index=True)
 
 st.markdown("### ⬇️ Exportar información")
 excel_bytes = to_excel_bytes({
