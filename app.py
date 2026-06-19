@@ -340,7 +340,6 @@ if not fatigue_valid.empty:
         color_discrete_map={"Cumple":"#16A34A","No cumple":"#DC2626"},
         template="plotly_white"
     )
-    fig.update_traces(line=dict(width=3), marker=dict(size=8))
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("### 📋 Tablas ejecutivas")
