@@ -10,22 +10,113 @@ st.set_page_config(page_title="Torre de Control COPEC", page_icon="🚦", layout
 
 FECHA_MINIMA_DEFAULT = pd.Timestamp("2026-01-01")
 CUMPL_COL = "Conductor se detine mínimo 15 minutos"
-
+COLOR_SEQUENCE = [
+    "#2563EB",  # azul profesional
+    "#0EA5E9",  # celeste técnico
+    "#16A34A",  # verde cumplimiento
+    "#D97706",  # ámbar advertencia
+    "#DC2626",  # rojo crítico
+    "#7C3AED",  # violeta sobrio
+    "#0891B2",  # cyan petróleo
+]
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"]{background:linear-gradient(135deg,#020617,#0f172a);}
-[data-testid="stHeader"]{background:rgba(2,6,23,0);}
-.block-container{padding-top:1.8rem;padding-bottom:2rem;}
-h1,h2,h3,h4,p,label,span,div{color:#f8fafc;}
-.metric-card{background:rgba(17,24,39,.95);border:1px solid #334155;border-radius:18px;padding:18px;min-height:105px;box-shadow:0 12px 30px rgba(0,0,0,.22);}
-.metric-label{color:#94a3b8;font-size:13px;margin-bottom:8px;}
-.metric-value{font-size:28px;font-weight:800;color:#f8fafc;}
-.metric-note{color:#94a3b8;font-size:12px;margin-top:4px;}
-.risk-alto,.risk-medio,.risk-bajo{padding:8px 12px;border-radius:999px;font-weight:800;display:inline-block;}
-.risk-alto{background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.45);color:#fecaca;}
-.risk-medio{background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.45);color:#fde68a;}
-.risk-bajo{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.45);color:#bbf7d0;}
-.period-card{background:rgba(14,165,233,.12);border:1px solid rgba(14,165,233,.45);border-radius:14px;padding:12px 16px;margin:10px 0 16px 0;}
+:root {
+    --bg: #F8FAFC;
+    --card: #FFFFFF;
+    --text: #0F172A;
+    --muted: #64748B;
+    --line: #CBD5E1;
+    --primary: #0057A8;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0F172A;
+        --card: #1E293B;
+        --text: #F8FAFC;
+        --muted: #94A3B8;
+        --line: #334155;
+        --primary: #38BDF8;
+    }
+}
+
+[data-testid="stAppViewContainer"] {
+    background: var(--bg);
+}
+
+[data-testid="stHeader"] {
+    background: rgba(0,0,0,0);
+}
+
+.block-container {
+    padding-top: 1.8rem;
+    padding-bottom: 2rem;
+}
+
+h1, h2, h3, h4, p, label, span, div {
+    color: var(--text);
+}
+
+.metric-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 18px;
+    min-height: 105px;
+    box-shadow: 0 8px 24px rgba(15,23,42,.08);
+}
+
+.metric-label {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.metric-value {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.metric-note {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.risk-alto, .risk-medio, .risk-bajo {
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-weight: 800;
+    display: inline-block;
+}
+
+.risk-alto {
+    background: rgba(220,38,38,.12);
+    border: 1px solid rgba(220,38,38,.35);
+    color: #DC2626;
+}
+
+.risk-medio {
+    background: rgba(217,119,6,.12);
+    border: 1px solid rgba(217,119,6,.35);
+    color: #D97706;
+}
+
+.risk-bajo {
+    background: rgba(22,163,74,.12);
+    border: 1px solid rgba(22,163,74,.35);
+    color: #16A34A;
+}
+
+.period-card {
+    background: rgba(0,87,168,.08);
+    border: 1px solid rgba(0,87,168,.28);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin: 10px 0 16px 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -266,21 +357,26 @@ with g0:
     counts = filtered["Plataforma"].value_counts()
     fig = px.bar(counts.reset_index(), x="Plataforma", y="count", labels={"count":"Alertas"}, text_auto=True)
     fig.update_layout(height=380, margin=dict(l=10,r=10,t=30,b=70))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True
+    color_discrete_sequence=COLOR_SEQUENCE,
+    )
 with g1:
     st.subheader("Alertas por transportista")
     counts = filtered["Transportista"].value_counts().head(25)
     fig = px.bar(counts.reset_index(), x="Transportista", y="count", labels={"count":"Alertas"}, text_auto=True)
     fig.update_layout(height=380, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
-    st.plotly_chart(fig, use_container_width=True)
-
+    st.plotly_chart(fig, use_container_width=True
+    color_discrete_sequence=COLOR_SEQUENCE,
+    )
 g2,g3 = st.columns(2)
 with g2:
     st.subheader("Top tipos de alerta")
     counts = filtered["Incidente"].value_counts().head(12)
     fig = px.bar(counts.reset_index(), x="Incidente", y="count", labels={"count":"Alertas"}, text_auto=True)
     fig.update_layout(height=420, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True
+    color_discrete_sequence=COLOR_SEQUENCE,
+    )
 with g3:
     st.subheader("Conductores críticos")
     counts = filtered["Conductor"].value_counts().head(15)
@@ -294,14 +390,17 @@ with g4:
     fat_df = pd.DataFrame({"Estado":["Cumple","No cumple","Sin información"],"Eventos":[cumple,no_cumple,sin_info]})
     fig = px.pie(fat_df, values="Eventos", names="Estado", hole=0.45)
     fig.update_layout(height=420, margin=dict(l=10,r=10,t=30,b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True
+    color_discrete_sequence=COLOR_SEQUENCE,
+    )
 with g5:
     st.subheader("Distribución plataforma / alerta")
     pa = filtered.groupby(["Plataforma","Incidente"]).size().reset_index(name="Alertas").sort_values("Alertas", ascending=False).head(20)
     fig = px.bar(pa, x="Incidente", y="Alertas", color="Plataforma", barmode="group")
     fig.update_layout(height=420, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
-    st.plotly_chart(fig, use_container_width=True)
-
+    st.plotly_chart(fig, use_container_width=True
+    color_discrete_sequence=COLOR_SEQUENCE,
+    )
 st.subheader("Alertas por día")
 
 date_index = pd.date_range(start=start_date, end=end_date, freq="D")
@@ -331,6 +430,7 @@ fig = px.line(
     y="Alertas",
     color="Plataforma",
     markers=True,
+    color_discrete_sequence=COLOR_SEQUENCE,
 )
 
 fig.update_xaxes(
