@@ -379,7 +379,10 @@ if not fatigue_valid.empty:
     )
 
     evo = evo_counts.reindex(full_index, fill_value=0).reset_index()
+    evo["FechaDia"] = pd.to_datetime(evo["FechaDia"], errors="coerce")
+    evo = evo.sort_values("FechaDia").reset_index(drop=True)
 
+    # Gráfico tipo área + línea, similar a Power BI, con fechas correlativas.
     fig = px.line(
         evo,
         x="FechaDia",
@@ -387,20 +390,39 @@ if not fatigue_valid.empty:
         color="Estado",
         markers=True,
         color_discrete_map={
-            "Cumple":"#10B981",
-            "No cumple":"#F59E0B"
-        }
+            "Cumple": "#10B981",
+            "No cumple": "#F59E0B",
+        },
+    )
+
+    # Relleno bajo la línea para dar aspecto de área sin perder lectura de tendencia.
+    fig.update_traces(
+        mode="lines+markers",
+        fill="tozeroy",
+        opacity=0.55,
+        line=dict(width=3),
+        marker=dict(size=6),
+    )
+
+    fig.update_xaxes(
+        type="date",
+        title_text="Fecha",
+        tickformat="%d-%m",
+        dtick=7 * 24 * 60 * 60 * 1000,
+        tickangle=-45,
+    )
+
+    fig.update_yaxes(
+        title_text="Eventos",
+        rangemode="tozero",
     )
 
     fig.update_layout(
-        height=420,
+        height=430,
         hovermode="x unified",
-        xaxis_title="Fecha",
-        yaxis_title="Eventos",
-        legend_title="Resultado"
+        legend_title="Resultado",
+        margin=dict(l=10, r=10, t=30, b=90),
     )
-
-    
 
     st.plotly_chart(fig, use_container_width=True)
 
