@@ -609,7 +609,10 @@ if not fatigue_valid.empty:
         y="Eventos",
         color="Estado",
         barmode="group",
-        color_discrete_map=FATIGUE_COLORS,
+        color_discrete_map={
+    "Cumple": "#059669",
+    "No cumple": "#DC2626"
+},
         template=PLOTLY_TEMPLATE,
     )
     st.plotly_chart(fig, use_container_width=True)
