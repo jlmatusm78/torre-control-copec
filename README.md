@@ -1,18 +1,23 @@
 # Torre de Control COPEC
 
-Dashboard Streamlit para Torre de Control COPEC, listo para GitHub y Streamlit Cloud.
+Dashboard Streamlit listo para GitHub y Streamlit Cloud.
 
 ## Incluye
-- Lectura de hojas `GUARDIAN` y `FLOTAGO`/`FlotaGo`.
+
+- Lectura de hojas `GUARDIAN` y `FLOTAGO`.
 - Filtro por plataforma.
 - Datos desde 01-01-2026.
 - Filtro por rango de fechas.
-- Filtros por transportista, incidente, conductor y búsqueda general.
-- KPIs, score de riesgo, gráficos y tablas.
-- Gráfico de alertas por día corregido para mostrar solo fechas reales.
+- Paleta profesional compatible con modo claro y oscuro.
+- KPIs ejecutivos.
+- Score de riesgo.
+- Gráficos interactivos.
+- Gráfico de alertas por día correlativo y sin saltos.
+- Fatiga / somnolencia en gráfico de barras con solo Cumple y No cumple.
 - Exportación a Excel.
 
 ## Subir a GitHub
+
 Sube:
 - `app.py`
 - `requirements.txt`
