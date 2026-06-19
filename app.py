@@ -330,16 +330,36 @@ if not fatigue_valid.empty:
         FechaDia=pd.to_datetime(fatigue_valid["FechaDia"], errors="coerce"),
         Estado=fatigue_valid[CUMPL_COL].map({"SI":"Cumple","NO":"No cumple"})
     )
-    evo=(fatigue_evo.groupby(["FechaDia","Estado"]).size().reset_index(name="Eventos").sort_values("FechaDia"))
-    fig = px.bar(
+
+    evo = (
+        fatigue_evo.groupby(["FechaDia","Estado"])
+        .size()
+        .reset_index(name="Eventos")
+        .sort_values("FechaDia")
+    )
+
+    fig = px.line(
         evo,
         x="FechaDia",
         y="Eventos",
         color="Estado",
-        barmode="group",
-        color_discrete_map={"Cumple":"#16A34A","No cumple":"#DC2626"},
-        template="plotly_white"
+        markers=True,
+        color_discrete_map={
+            "Cumple":"#10B981",
+            "No cumple":"#F59E0B"
+        }
     )
+
+    fig.update_layout(
+        height=420,
+        hovermode="x unified",
+        xaxis_title="Fecha",
+        yaxis_title="Eventos",
+        legend_title="Resultado"
+    )
+
+    fig.update_traces(text=evo["Eventos"], textposition="top center")
+
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("### 📋 Tablas ejecutivas")
