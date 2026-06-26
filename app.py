@@ -30,6 +30,19 @@ h1,h2,h3,h4,p,label,span,div{color:#f8fafc;}
 .risk-medio{background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.45);color:#fde68a;}
 .risk-bajo{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.45);color:#bbf7d0;}
 .period-card{background:rgba(14,165,233,.12);border:1px solid rgba(14,165,233,.45);border-radius:14px;padding:12px 16px;margin:10px 0 16px 0;}
+
+[data-testid="stSidebar"]{
+background:var(--sidebar-bg)!important;
+}
+[data-testid="stSidebar"] *{
+color:var(--sidebar-text)!important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"]>div,
+[data-testid="stSidebar"] [data-baseweb="input"]>div{
+background:var(--sidebar-input)!important;
+border:1px solid #CBD5E1!important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -217,6 +230,7 @@ base_filtered = df[(df["FechaDia"] >= start_date) & (df["FechaDia"] <= end_date)
 
 selected_plataforma = st.sidebar.selectbox("Plataforma", ["Todas"] + sorted(base_filtered["Plataforma"].unique().tolist()))
 selected_transportista = st.sidebar.selectbox("Transportista", ["Todos"] + sorted(base_filtered["Transportista"].unique().tolist()))
+selected_planta = st.sidebar.selectbox("🏭 Planta", ["Todas"] + sorted(base_filtered["Planta"].unique().tolist()))
 selected_incidente = st.sidebar.selectbox("Incidente", ["Todos"] + sorted(base_filtered["Incidente"].unique().tolist()))
 selected_conductor = st.sidebar.selectbox("Conductor", ["Todos"] + sorted(base_filtered["Conductor"].unique().tolist()))
 search = st.sidebar.text_input("Búsqueda general", placeholder="Patente, planta, texto...").strip().lower()
@@ -226,6 +240,8 @@ if selected_plataforma != "Todas":
     filtered = filtered[filtered["Plataforma"] == selected_plataforma]
 if selected_transportista != "Todos":
     filtered = filtered[filtered["Transportista"] == selected_transportista]
+if selected_planta != "Todas":
+    filtered=filtered[filtered["Planta"]==selected_planta]
 if selected_incidente != "Todos":
     filtered = filtered[filtered["Incidente"] == selected_incidente]
 if selected_conductor != "Todos":
@@ -425,6 +441,14 @@ if not fatigue_valid.empty:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+
+st.subheader("🏭 Alertas por Planta")
+plantas=(filtered.groupby(["Planta","Plataforma"]).size().reset_index(name="Alertas"))
+fig=px.bar(plantas,x="Planta",y="Alertas",color="Plataforma",barmode="group",color_discrete_sequence=COLOR_SEQUENCE,
+hover_data={"Alertas":True})
+fig.update_layout(height=430,xaxis_tickangle=-45)
+st.plotly_chart(fig,use_container_width=True)
 
 st.markdown("### 📋 Tablas ejecutivas")
 tab1,tab2,tab3,tab4,tab5 = st.tabs(["Ranking transportistas","Ranking conductores","Gestión fatiga","Resumen plataforma","Datos filtrados"])
