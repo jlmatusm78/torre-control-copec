@@ -571,9 +571,7 @@ with st.expander("📋 Desglose del score actual", expanded=False):
 
 st.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ====== IRO EXPLICADO ======
-import pandas as pd
-st.markdown("## 📊 Índice de Riesgo Operacional (IRO)")
+📊 Índice de Riesgo Operacional (IRO)")
 iro_score = score if 'score' in globals() else 0
 lvl, css = risk_level(iro_score) if 'risk_level' in globals() else ("N/A","")
 st.progress(min(iro_score/100,1.0), text=f"IRO {iro_score}/100 - {lvl}")
