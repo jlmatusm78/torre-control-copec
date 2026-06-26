@@ -570,3 +570,50 @@ with st.expander("📋 Desglose del score actual", expanded=False):
         st.success("No hay factores de riesgo detectados para los filtros actuales.")
 
 st.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ====== IRO EXPLICADO ======
+import pandas as pd
+st.markdown("## 📊 Índice de Riesgo Operacional (IRO)")
+iro_score = score if 'score' in globals() else 0
+lvl, css = risk_level(iro_score) if 'risk_level' in globals() else ("N/A","")
+st.progress(min(iro_score/100,1.0), text=f"IRO {iro_score}/100 - {lvl}")
+
+with st.expander("¿Cómo se calcula el IRO?"):
+    st.table(pd.DataFrame({
+        "Factor":[
+            "Fatiga / Somnolencia","Microsueño","Exceso de velocidad",
+            "Cámara tapada","Uso de celular","Distracción",
+            "Cámara desviada","Bostezo","Cada 'No cumple'",
+            ">=3 eventos mismo conductor/día","Concentración >30%"
+        ],
+        "Puntaje":[10,20,8,8,7,6,6,5,15,10,20]
+    }))
+    st.markdown("### Semáforo")
+    st.table(pd.DataFrame({
+        "Rango":["0-20","21-40","41-60","61-80","81-100"],
+        "Nivel":["🟢 Excelente","🟢 Bueno","🟡 Medio","🟠 Alto","🔴 Crítico"]
+    }))
+
+with st.expander("Desglose del score actual"):
+    breakdown=[]
+    if 'filtered' in globals():
+        incidents=filtered["Incidente"].fillna("").str.lower()
+        def pts(mask,val,label):
+            c=int(mask.sum())
+            if c: breakdown.append((label,c*val))
+        pts(incidents.str.contains("fatiga|somnol"),10,"Fatiga / Somnolencia")
+        pts(incidents.str.contains("micros"),20,"Microsueño")
+        pts(incidents.str.contains("velocidad"),8,"Exceso velocidad")
+        pts(incidents.str.contains("tapada"),8,"Cámara tapada")
+        pts(incidents.str.contains("celular"),7,"Uso celular")
+        pts(incidents.str.contains("distr"),6,"Distracción")
+        pts(incidents.str.contains("desvi"),6,"Cámara desviada")
+        pts(incidents.str.contains("boste"),5,"Bostezo")
+        if 'CUMPL_COL' in globals():
+            nc=int((filtered[CUMPL_COL].astype(str).str.upper()=="NO").sum())
+            if nc: breakdown.append(("No cumple",nc*15))
+        if breakdown:
+            bdf=pd.DataFrame(breakdown,columns=["Factor","Puntos"]).sort_values("Puntos",ascending=False)
+            st.bar_chart(bdf.set_index("Factor"))
+            st.dataframe(bdf,hide_index=True,use_container_width=True)
+            st.info(f"**IRO actual:** {iro_score}/100 ({lvl})")
