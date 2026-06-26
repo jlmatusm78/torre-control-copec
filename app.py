@@ -242,8 +242,6 @@ if selected_transportista != "Todos":
     filtered = filtered[filtered["Transportista"] == selected_transportista]
 if selected_planta != "Todas":
     filtered = filtered[filtered["Planta"] == selected_planta]
-if selected_planta != "Todas":
-    filtered=filtered[filtered["Planta"]==selected_planta]
 if selected_incidente != "Todos":
     filtered = filtered[filtered["Incidente"] == selected_incidente]
 if selected_conductor != "Todos":
@@ -453,11 +451,6 @@ fig.update_layout(height=430,xaxis_tickangle=-45)
 st.plotly_chart(fig,use_container_width=True)
 
 
-st.subheader("Alertas por Planta")
-plant=filtered.groupby(["Planta","Plataforma"]).size().reset_index(name="Alertas")
-fig=px.bar(plant,x="Planta",y="Alertas",color="Plataforma",barmode="group",color_discrete_sequence=COLOR_SEQUENCE)
-fig.update_layout(height=420,xaxis_tickangle=-45)
-st.plotly_chart(fig,use_container_width=True)
 st.markdown("### 📋 Tablas ejecutivas")
 tab1,tab2,tab3,tab4,tab5 = st.tabs(["Ranking transportistas","Ranking conductores","Gestión fatiga","Resumen plataforma","Datos filtrados"])
 
