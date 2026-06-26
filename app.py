@@ -522,7 +522,7 @@ excel_bytes = to_excel_bytes({
 
 
 # --- Explicación del IRO ---
-st.download_buttonst.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.header("📊 Índice de Riesgo Operacional (IRO)")
 iro_score = score if 'score' in globals() else 0
