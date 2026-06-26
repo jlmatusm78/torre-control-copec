@@ -99,20 +99,52 @@ def normalize_data(df):
     return df
 
 def risk_score(data):
+    """
+    Índice de Riesgo Operacional (IRO) COPEC
+    Basado en criticidad y reincidencia.
+    """
     if data.empty:
         return 0
-    fatigue = data[data["EsFatiga"]]
-    no_cumple = int((fatigue[CUMPL_COL] == "NO").sum())
-    total = len(data)
-    fatigue_events = len(fatigue)
-    unique_drivers = data["Conductor"].replace("", pd.NA).dropna().nunique()
-    total_component = min(total / 300, 1) * 25
-    fatigue_component = min(fatigue_events / 15, 1) * 25
-    non_compliance_component = min(no_cumple / 8, 1) * 35
-    concentration_component = 0
-    if unique_drivers > 0:
-        concentration_component = min(data["Conductor"].value_counts(normalize=True).iloc[0] / 0.35, 1) * 15
-    return round(total_component + fatigue_component + non_compliance_component + concentration_component)
+
+    score = 0.0
+
+    incident_weights = {
+        "fatiga":10,
+        "somnolencia":10,
+        "cansancio":10,
+        "bostezo":5,
+        "celular":7,
+        "distracción":6,
+        "distraccion":6,
+        "cámara tapada":8,
+        "camara tapada":8,
+        "cámara desviada":6,
+        "camara desviada":6,
+        "exceso":8,
+        "velocidad":8,
+        "microsueño":20,
+        "microsueno":20
+    }
+
+    for incidente in data["Incidente"].fillna("").str.lower():
+        for palabra,peso in incident_weights.items():
+            if palabra in incidente:
+                score += peso
+                break
+
+    fatigue=data[data["EsFatiga"]]
+    no_cumple=int((fatigue[CUMPL_COL]=="NO").sum())
+    score += no_cumple*15
+
+    if not data.empty:
+        diarios=data.groupby(["Conductor","FechaDia"]).size()
+        score += (diarios[diarios>=3].count())*10
+
+        top_share=data["Conductor"].value_counts(normalize=True).max()
+        if top_share>0.30:
+            score +=20
+
+    return min(round(score),100)
 
 def risk_level(score):
     if score >= 70:
