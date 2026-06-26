@@ -522,54 +522,7 @@ excel_bytes = to_excel_bytes({
 
 
 # --- Explicación del IRO ---
-with st.expander("📊 ¿Cómo se calcula el Índice de Riesgo Operacional (IRO)?", expanded=False):
-    st.markdown("### Tabla de puntajes")
-    iro_table = pd.DataFrame([
-        ["Fatiga / Somnolencia",10],
-        ["Microsueño",20],
-        ["Exceso de velocidad",8],
-        ["Cámara tapada",8],
-        ["Uso de celular",7],
-        ["Distracción",6],
-        ["Cámara desviada",6],
-        ["Bostezo",5],
-        ["Cada 'No cumple'",15],
-        ["3 o más eventos del mismo conductor en un día",10],
-        ["Conductor concentra >30% de alertas",20],
-    ], columns=["Factor","Puntaje"])
-    st.dataframe(iro_table, hide_index=True, use_container_width=True)
-
-    st.markdown("### Semáforo")
-    sem = pd.DataFrame([
-        ["🟢","0-20","Excelente"],
-        ["🟢","21-40","Bueno"],
-        ["🟡","41-60","Riesgo Medio"],
-        ["🟠","61-80","Riesgo Alto"],
-        ["🔴","81-100","Riesgo Crítico"],
-    ], columns=["","Score","Nivel"])
-    st.dataframe(sem, hide_index=True, use_container_width=True)
-
-with st.expander("📋 Desglose del score actual", expanded=False):
-    st.info("Este desglose se calcula sobre los filtros actualmente aplicados.")
-    breakdown=[]
-    fat_events=int(filtered["EsFatiga"].sum()) if "filtered" in locals() else 0
-    if fat_events:
-        breakdown.append(("Fatiga / Somnolencia", fat_events*10))
-    nc=int((filtered[CUMPL_COL]=="NO").sum()) if "filtered" in locals() else 0
-    if nc:
-        breakdown.append(("No cumple", nc*15))
-    for patt,label,pts in [("velocidad","Exceso de velocidad",8),("celular","Uso de celular",7),("distr","Distracción",6),("tapada","Cámara tapada",8),("desvi","Cámara desviada",6),("boste","Bostezo",5),("micro","Microsueño",20)]:
-        c=filtered["Incidente"].str.contains(patt,case=False,na=False).sum() if "filtered" in locals() else 0
-        if c:
-            breakdown.append((label,c*pts))
-    if breakdown:
-        dfb=pd.DataFrame(breakdown,columns=["Factor","Puntos"])
-        st.dataframe(dfb,hide_index=True,use_container_width=True)
-        st.metric("IRO mostrado", score if "score" in locals() else dfb["Puntos"].sum())
-    else:
-        st.success("No hay factores de riesgo detectados para los filtros actuales.")
-
-st.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_buttonst.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.header("📊 Índice de Riesgo Operacional (IRO)")
 iro_score = score if 'score' in globals() else 0
