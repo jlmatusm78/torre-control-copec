@@ -274,7 +274,14 @@ if selected_incidente != "Todos":
 if selected_conductor != "Todos":
     filtered = filtered[filtered["Conductor"] == selected_conductor]
 if search:
-    filtered = filtered[filtered.astype(str).apply(lambda row: search in " ".join(row).lower(), axis=1)]
+    # Búsqueda robusta en todas las columnas. Convierte cada valor a texto
+    # explícitamente para evitar TypeError cuando existen columnas numéricas,
+    # fechas, booleanos o valores nulos.
+    search_mask = filtered.apply(
+        lambda row: search in " ".join(str(value) for value in row.values).lower(),
+        axis=1,
+    )
+    filtered = filtered[search_mask]
 
 st.markdown(f"""
 <div class="period-card">
