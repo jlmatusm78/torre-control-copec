@@ -30,19 +30,6 @@ h1,h2,h3,h4,p,label,span,div{color:#f8fafc;}
 .risk-medio{background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.45);color:#fde68a;}
 .risk-bajo{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.45);color:#bbf7d0;}
 .period-card{background:rgba(14,165,233,.12);border:1px solid rgba(14,165,233,.45);border-radius:14px;padding:12px 16px;margin:10px 0 16px 0;}
-
-[data-testid="stSidebar"]{
-background:var(--sidebar-bg)!important;
-}
-[data-testid="stSidebar"] *{
-color:var(--sidebar-text)!important;
-}
-[data-testid="stSidebar"] [data-baseweb="select"]>div,
-[data-testid="stSidebar"] [data-baseweb="input"]>div{
-background:var(--sidebar-input)!important;
-border:1px solid #CBD5E1!important;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -81,7 +68,21 @@ def normalize_data(df):
     df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce", dayfirst=True)
     df = df[df["Fecha"].notna()].copy()
     df = df[df["Fecha"] >= FECHA_MINIMA_DEFAULT].copy()
-    for col in ["Plataforma", "Transportista", "Conductor", "Incidente", "Planta", "Patente"]:
+    # Homologar nombres habituales para identificar cada evento.
+    alias_map = {
+        "ID": ["Id", "id", "ID Evento", "ID evento", "Evento ID"],
+        "Tracto": ["TRACTO", "tracto", "N° Tracto", "Nº Tracto", "Nro Tracto"],
+    }
+    for canonical, aliases in alias_map.items():
+        if canonical not in df.columns:
+            for alias in aliases:
+                if alias in df.columns:
+                    df[canonical] = df[alias]
+                    break
+        if canonical not in df.columns:
+            df[canonical] = ""
+
+    for col in ["ID", "Tracto", "Plataforma", "Transportista", "Conductor", "Incidente", "Planta", "Patente"]:
         if col not in df.columns:
             df[col] = ""
         df[col] = df[col].fillna("").astype(str).str.strip()
@@ -91,6 +92,8 @@ def normalize_data(df):
     df["Incidente"] = df["Incidente"].replace("", "SIN CLASIFICAR")
     df["Planta"] = df["Planta"].replace("", "SIN PLANTA")
     df["Patente"] = df["Patente"].replace("", "SIN PATENTE")
+    df["ID"] = df["ID"].replace("", "SIN ID")
+    df["Tracto"] = df["Tracto"].replace("", "SIN TRACTO")
     if CUMPL_COL not in df.columns:
         df[CUMPL_COL] = ""
     df[CUMPL_COL] = df[CUMPL_COL].fillna("").astype(str).str.strip().str.upper().replace({"SÍ":"SI","SI.":"SI","NO.":"NO"})
@@ -99,52 +102,20 @@ def normalize_data(df):
     return df
 
 def risk_score(data):
-    """
-    Índice de Riesgo Operacional (IRO) COPEC
-    Basado en criticidad y reincidencia.
-    """
     if data.empty:
         return 0
-
-    score = 0.0
-
-    incident_weights = {
-        "fatiga":10,
-        "somnolencia":10,
-        "cansancio":10,
-        "bostezo":5,
-        "celular":7,
-        "distracción":6,
-        "distraccion":6,
-        "cámara tapada":8,
-        "camara tapada":8,
-        "cámara desviada":6,
-        "camara desviada":6,
-        "exceso":8,
-        "velocidad":8,
-        "microsueño":20,
-        "microsueno":20
-    }
-
-    for incidente in data["Incidente"].fillna("").str.lower():
-        for palabra,peso in incident_weights.items():
-            if palabra in incidente:
-                score += peso
-                break
-
-    fatigue=data[data["EsFatiga"]]
-    no_cumple=int((fatigue[CUMPL_COL]=="NO").sum())
-    score += no_cumple*15
-
-    if not data.empty:
-        diarios=data.groupby(["Conductor","FechaDia"]).size()
-        score += (diarios[diarios>=3].count())*10
-
-        top_share=data["Conductor"].value_counts(normalize=True).max()
-        if top_share>0.30:
-            score +=20
-
-    return min(round(score),100)
+    fatigue = data[data["EsFatiga"]]
+    no_cumple = int((fatigue[CUMPL_COL] == "NO").sum())
+    total = len(data)
+    fatigue_events = len(fatigue)
+    unique_drivers = data["Conductor"].replace("", pd.NA).dropna().nunique()
+    total_component = min(total / 300, 1) * 25
+    fatigue_component = min(fatigue_events / 15, 1) * 25
+    non_compliance_component = min(no_cumple / 8, 1) * 35
+    concentration_component = 0
+    if unique_drivers > 0:
+        concentration_component = min(data["Conductor"].value_counts(normalize=True).iloc[0] / 0.35, 1) * 15
+    return round(total_component + fatigue_component + non_compliance_component + concentration_component)
 
 def risk_level(score):
     if score >= 70:
@@ -262,7 +233,6 @@ base_filtered = df[(df["FechaDia"] >= start_date) & (df["FechaDia"] <= end_date)
 
 selected_plataforma = st.sidebar.selectbox("Plataforma", ["Todas"] + sorted(base_filtered["Plataforma"].unique().tolist()))
 selected_transportista = st.sidebar.selectbox("Transportista", ["Todos"] + sorted(base_filtered["Transportista"].unique().tolist()))
-selected_planta = st.sidebar.selectbox("🏭 Planta", ["Todas"] + sorted(base_filtered["Planta"].unique().tolist()))
 selected_incidente = st.sidebar.selectbox("Incidente", ["Todos"] + sorted(base_filtered["Incidente"].unique().tolist()))
 selected_conductor = st.sidebar.selectbox("Conductor", ["Todos"] + sorted(base_filtered["Conductor"].unique().tolist()))
 search = st.sidebar.text_input("Búsqueda general", placeholder="Patente, planta, texto...").strip().lower()
@@ -272,8 +242,6 @@ if selected_plataforma != "Todas":
     filtered = filtered[filtered["Plataforma"] == selected_plataforma]
 if selected_transportista != "Todos":
     filtered = filtered[filtered["Transportista"] == selected_transportista]
-if selected_planta != "Todas":
-    filtered = filtered[filtered["Planta"] == selected_planta]
 if selected_incidente != "Todos":
     filtered = filtered[filtered["Incidente"] == selected_incidente]
 if selected_conductor != "Todos":
@@ -324,6 +292,28 @@ with g1:
     counts = filtered["Transportista"].value_counts().head(25)
     fig = px.bar(counts.reset_index(), x="Transportista", y="count", labels={"count":"Alertas"}, text_auto=True)
     fig.update_layout(height=380, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
+    st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("Alertas por tracto")
+tracto_counts = (
+    filtered[filtered["Tracto"] != "SIN TRACTO"]["Tracto"]
+    .value_counts()
+    .head(25)
+    .rename_axis("Tracto")
+    .reset_index(name="Alertas")
+)
+if tracto_counts.empty:
+    st.info("No hay información de tracto para los filtros seleccionados.")
+else:
+    fig = px.bar(
+        tracto_counts,
+        x="Alertas",
+        y="Tracto",
+        orientation="h",
+        text="Alertas",
+        labels={"Alertas":"Alertas", "Tracto":"Tracto"},
+    )
+    fig.update_layout(height=520, yaxis=dict(autorange="reversed"), margin=dict(l=10,r=10,t=30,b=10))
     st.plotly_chart(fig, use_container_width=True)
 
 g2,g3 = st.columns(2)
@@ -474,42 +464,36 @@ if not fatigue_valid.empty:
 
     st.plotly_chart(fig, use_container_width=True)
 
-
-st.subheader("🏭 Alertas por Planta")
-plantas=(filtered.groupby(["Planta","Plataforma"]).size().reset_index(name="Alertas"))
-fig=px.bar(plantas,x="Planta",y="Alertas",color="Plataforma",barmode="group",color_discrete_sequence=COLOR_SEQUENCE,
-hover_data={"Alertas":True})
-fig.update_layout(height=430,xaxis_tickangle=-45)
-st.plotly_chart(fig,use_container_width=True)
-
-
 st.markdown("### 📋 Tablas ejecutivas")
 tab1,tab2,tab3,tab4,tab5 = st.tabs(["Ranking transportistas","Ranking conductores","Gestión fatiga","Resumen plataforma","Datos filtrados"])
+
+# Columnas de trazabilidad: se mantienen visibles en los detalles después de aplicar cualquier filtro.
+detail_cols = [c for c in ["ID","Fecha","Tracto","Plataforma","Transportista","Conductor","Patente","Planta","Incidente",CUMPL_COL] if c in filtered.columns]
 
 with tab1:
     tr = transportista_ranking(filtered)
     st.dataframe(tr, use_container_width=True, hide_index=True)
+    st.caption("Detalle de eventos del ranking según los filtros activos")
+    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
 with tab2:
     dr = driver_ranking(filtered)
     st.dataframe(dr, use_container_width=True, hide_index=True)
+    st.caption("Detalle de eventos del ranking según los filtros activos")
+    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
 with tab3:
     if fatigue.empty:
         st.info("No hay eventos de fatiga para los filtros seleccionados.")
         fs = pd.DataFrame()
     else:
-        fs = (
-            fatigue.groupby(["Plataforma","Conductor"])[CUMPL_COL]
-            .agg(Eventos="count", Cumple=lambda s:int((s=="SI").sum()), No_cumple=lambda s:int((s=="NO").sum()), Sin_info=lambda s:int((~s.isin(["SI","NO"])).sum()))
-            .reset_index()
-            .sort_values(["No_cumple","Eventos"], ascending=False)
-        )
+        fs = fatigue[detail_cols].sort_values("Fecha", ascending=False).copy()
         st.dataframe(fs, use_container_width=True, hide_index=True)
 with tab4:
     ps = filtered.groupby("Plataforma").agg(Alertas=("Incidente","count"), Transportistas=("Transportista","nunique"), Conductores=("Conductor","nunique"), Eventos_fatiga=("EsFatiga","sum")).reset_index()
     st.dataframe(ps, use_container_width=True, hide_index=True)
+    st.caption("Detalle de eventos por plataforma según los filtros activos")
+    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
 with tab5:
-    cols = [c for c in ["Fecha","Plataforma","Transportista","Conductor","Patente","Planta","Incidente",CUMPL_COL] if c in filtered.columns]
-    st.dataframe(filtered[cols], use_container_width=True, hide_index=True)
+    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
 
 st.markdown("### ⬇️ Exportar información")
 excel_bytes = to_excel_bytes({
@@ -517,54 +501,6 @@ excel_bytes = to_excel_bytes({
     "Ranking conductores": driver_ranking(filtered),
     "Fatiga": fs if "fs" in locals() else pd.DataFrame(),
     "Resumen plataforma": ps if "ps" in locals() else pd.DataFrame(),
-    "Datos filtrados": filtered[[c for c in ["Fecha","Plataforma","Transportista","Conductor","Patente","Planta","Incidente",CUMPL_COL] if c in filtered.columns]],
+    "Datos filtrados": filtered[detail_cols].sort_values("Fecha", ascending=False),
 })
-
-
-# --- Explicación del IRO ---
 st.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-st.header("📊 Índice de Riesgo Operacional (IRO)")
-iro_score = score if 'score' in globals() else 0
-lvl, css = risk_level(iro_score) if 'risk_level' in globals() else ("N/A","")
-st.progress(min(iro_score/100,1.0), text=f"IRO {iro_score}/100 - {lvl}")
-
-with st.expander("¿Cómo se calcula el IRO?"):
-    st.table(pd.DataFrame({
-        "Factor":[
-            "Fatiga / Somnolencia","Microsueño","Exceso de velocidad",
-            "Cámara tapada","Uso de celular","Distracción",
-            "Cámara desviada","Bostezo","Cada 'No cumple'",
-            ">=3 eventos mismo conductor/día","Concentración >30%"
-        ],
-        "Puntaje":[10,20,8,8,7,6,6,5,15,10,20]
-    }))
-    st.markdown("### Semáforo")
-    st.table(pd.DataFrame({
-        "Rango":["0-20","21-40","41-60","61-80","81-100"],
-        "Nivel":["🟢 Excelente","🟢 Bueno","🟡 Medio","🟠 Alto","🔴 Crítico"]
-    }))
-
-with st.expander("Desglose del score actual"):
-    breakdown=[]
-    if 'filtered' in globals():
-        incidents=filtered["Incidente"].fillna("").str.lower()
-        def pts(mask,val,label):
-            c=int(mask.sum())
-            if c: breakdown.append((label,c*val))
-        pts(incidents.str.contains("fatiga|somnol"),10,"Fatiga / Somnolencia")
-        pts(incidents.str.contains("micros"),20,"Microsueño")
-        pts(incidents.str.contains("velocidad"),8,"Exceso velocidad")
-        pts(incidents.str.contains("tapada"),8,"Cámara tapada")
-        pts(incidents.str.contains("celular"),7,"Uso celular")
-        pts(incidents.str.contains("distr"),6,"Distracción")
-        pts(incidents.str.contains("desvi"),6,"Cámara desviada")
-        pts(incidents.str.contains("boste"),5,"Bostezo")
-        if 'CUMPL_COL' in globals():
-            nc=int((filtered[CUMPL_COL].astype(str).str.upper()=="NO").sum())
-            if nc: breakdown.append(("No cumple",nc*15))
-        if breakdown:
-            bdf=pd.DataFrame(breakdown,columns=["Factor","Puntos"]).sort_values("Puntos",ascending=False)
-            st.bar_chart(bdf.set_index("Factor"))
-            st.dataframe(bdf,hide_index=True,use_container_width=True)
-            st.info(f"**IRO actual:** {iro_score}/100 ({lvl})")
