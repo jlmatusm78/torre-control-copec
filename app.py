@@ -18,8 +18,29 @@ st.markdown("""
 [data-testid="stAppViewContainer"]{background:linear-gradient(135deg,#020617,#0f172a);}
 [data-testid="stHeader"]{background:rgba(2,6,23,0);}
 .block-container{padding-top:1.8rem;padding-bottom:2rem;}
-[data-testid="stSidebar"]{background:#F1F5F9!important;}
-[data-testid="stSidebar"] *{color:#0F172A!important;}
+[data-testid="stSidebar"]{
+    background:linear-gradient(180deg,#0b1220 0%,#111827 100%)!important;
+    border-right:1px solid #243047!important;
+}
+[data-testid="stSidebar"] *{color:#e5edf8!important;}
+[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{color:#f8fafc!important;}
+[data-testid="stSidebar"] label,[data-testid="stSidebar"] p{color:#cbd5e1!important;}
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] [data-testid="stDateInput"] input,
+[data-testid="stSidebar"] input{
+    background:#0f172a!important;
+    color:#f8fafc!important;
+    border-color:#334155!important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] svg{fill:#94a3b8!important;}
+[data-testid="stSidebar"] button{
+    background:#1e293b!important;
+    color:#f8fafc!important;
+    border:1px solid #334155!important;
+}
+[data-testid="stSidebar"] button:hover{border-color:#0ea5e9!important;color:#e0f2fe!important;}
+[data-testid="stSidebar"] hr{border-color:#334155!important;}
 h1,h2,h3,h4,p,label,span,div{color:#f8fafc;}
 .metric-card{background:rgba(17,24,39,.95);border:1px solid #334155;border-radius:18px;padding:18px;min-height:105px;box-shadow:0 12px 30px rgba(0,0,0,.22);}
 .metric-label{color:#94a3b8;font-size:13px;margin-bottom:8px;}
@@ -93,7 +114,13 @@ def normalize_data(df):
     df["Planta"] = df["Planta"].replace("", "SIN PLANTA")
     df["Patente"] = df["Patente"].replace("", "SIN PATENTE")
     df["ID"] = df["ID"].replace("", "SIN ID")
-    df["Tracto"] = df["Tracto"].replace("", "SIN TRACTO")
+    # El tracto es un IDENTIFICADOR, no una magnitud numérica.
+    # Limpia valores provenientes de Sheets/Excel como 5568.0 -> 5568.
+    df["Tracto"] = (
+        df["Tracto"]
+        .str.replace(r"^([0-9]+)\.0$", r"\1", regex=True)
+        .replace("", "SIN TRACTO")
+    )
     if CUMPL_COL not in df.columns:
         df[CUMPL_COL] = ""
     df[CUMPL_COL] = df[CUMPL_COL].fillna("").astype(str).str.strip().str.upper().replace({"SÍ":"SI","SI.":"SI","NO.":"NO"})
@@ -295,25 +322,63 @@ with g1:
     st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("Alertas por tracto")
+# IMPORTANTE: Tracto se trata como categoría/texto, nunca como eje numérico.
+tracto_base = filtered.loc[filtered["Tracto"] != "SIN TRACTO", "Tracto"].astype(str).str.strip()
 tracto_counts = (
-    filtered[filtered["Tracto"] != "SIN TRACTO"]["Tracto"]
+    tracto_base
     .value_counts()
-    .head(25)
+    .head(20)
     .rename_axis("Tracto")
     .reset_index(name="Alertas")
 )
+
 if tracto_counts.empty:
     st.info("No hay información de tracto para los filtros seleccionados.")
 else:
+    # El orden de categorías se fija explícitamente para impedir que Plotly
+    # interprete tractos como 5k, 6k, 7k, etc.
+    tracto_counts["Tracto"] = tracto_counts["Tracto"].astype(str)
+    orden_tractos = tracto_counts["Tracto"].tolist()
+
     fig = px.bar(
         tracto_counts,
         x="Alertas",
         y="Tracto",
         orientation="h",
         text="Alertas",
-        labels={"Alertas":"Alertas", "Tracto":"Tracto"},
+        labels={"Alertas": "Cantidad de alertas", "Tracto": "N° Tracto"},
+        category_orders={"Tracto": orden_tractos},
+        color_discrete_sequence=["#38BDF8"],
     )
-    fig.update_layout(height=520, yaxis=dict(autorange="reversed"), margin=dict(l=10,r=10,t=30,b=10))
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="<b>Tracto %{y}</b><br>Alertas: %{x}<extra></extra>"
+    )
+    fig.update_yaxes(
+        type="category",
+        autorange="reversed",
+        title_text="N° Tracto",
+        tickfont=dict(size=12, color="#E2E8F0"),
+        title_font=dict(color="#E2E8F0"),
+        showgrid=False,
+    )
+    fig.update_xaxes(
+        title_text="Cantidad de alertas",
+        rangemode="tozero",
+        gridcolor="rgba(148,163,184,0.15)",
+        tickfont=dict(color="#CBD5E1"),
+        title_font=dict(color="#E2E8F0"),
+    )
+    fig.update_layout(
+        height=max(470, 30 * len(tracto_counts) + 110),
+        margin=dict(l=25, r=70, t=20, b=55),
+        plot_bgcolor="#0B0F19",
+        paper_bgcolor="#0B0F19",
+        font=dict(color="#F8FAFC"),
+        bargap=0.28,
+        showlegend=False,
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 g2,g3 = st.columns(2)
