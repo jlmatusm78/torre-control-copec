@@ -367,9 +367,8 @@ else:
 
     fig = px.bar(
         tracto_counts,
-        x="Alertas",
-        y="Tracto",
-        orientation="h",
+        x="Tracto",
+        y="Alertas",
         text="Alertas",
         labels={"Alertas": "Cantidad de alertas", "Tracto": "N° Tracto"},
         category_orders={"Tracto": orden_tractos},
@@ -378,17 +377,19 @@ else:
     fig.update_traces(
         textposition="outside",
         cliponaxis=False,
-        hovertemplate="<b>Tracto %{y}</b><br>Alertas: %{x}<extra></extra>"
-    )
-    fig.update_yaxes(
-        type="category",
-        autorange="reversed",
-        title_text="N° Tracto",
-        tickfont=dict(size=12, color="#E2E8F0"),
-        title_font=dict(color="#E2E8F0"),
-        showgrid=False,
+        hovertemplate="<b>Tracto %{x}</b><br>Alertas: %{y}<extra></extra>"
     )
     fig.update_xaxes(
+        type="category",
+        title_text="N° Tracto",
+        tickfont=dict(size=11, color="#E2E8F0"),
+        title_font=dict(color="#E2E8F0"),
+        tickangle=-45,
+        showgrid=False,
+        categoryorder="array",
+        categoryarray=orden_tractos,
+    )
+    fig.update_yaxes(
         title_text="Cantidad de alertas",
         rangemode="tozero",
         gridcolor="rgba(148,163,184,0.15)",
@@ -396,12 +397,12 @@ else:
         title_font=dict(color="#E2E8F0"),
     )
     fig.update_layout(
-        height=max(470, 30 * len(tracto_counts) + 110),
-        margin=dict(l=25, r=70, t=20, b=55),
+        height=520,
+        margin=dict(l=55, r=35, t=25, b=90),
         plot_bgcolor="#0B0F19",
         paper_bgcolor="#0B0F19",
         font=dict(color="#F8FAFC"),
-        bargap=0.28,
+        bargap=0.22,
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
