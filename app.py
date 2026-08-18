@@ -274,14 +274,32 @@ if selected_incidente != "Todos":
 if selected_conductor != "Todos":
     filtered = filtered[filtered["Conductor"] == selected_conductor]
 if search:
-    # Búsqueda robusta en todas las columnas. Convierte cada valor a texto
-    # explícitamente para evitar TypeError cuando existen columnas numéricas,
-    # fechas, booleanos o valores nulos.
-    search_mask = filtered.apply(
-        lambda row: search in " ".join(str(value) for value in row.values).lower(),
-        axis=1,
+    # Si el texto ingresado coincide EXACTAMENTE con un N° de Tracto,
+    # se prioriza esa búsqueda y se muestran únicamente los eventos de ese tracto.
+    # Esto evita que, por ejemplo, buscar "5001" encuentre ese número dentro de
+    # una ID, fecha u otra columna y termine mostrando tractos adicionales.
+    search_clean = search.strip().lower()
+    tracto_normalizado = (
+        filtered["Tracto"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+        .str.lower()
     )
-    filtered = filtered[search_mask]
+
+    if (tracto_normalizado == search_clean).any():
+        filtered = filtered[tracto_normalizado == search_clean]
+    else:
+        # Si no existe un tracto con coincidencia exacta, se mantiene la
+        # búsqueda general en el resto de los campos del dashboard.
+        search_mask = filtered.apply(
+            lambda row: search_clean in " ".join(
+                "" if pd.isna(value) else str(value) for value in row.values
+            ).lower(),
+            axis=1,
+        )
+        filtered = filtered[search_mask]
 
 st.markdown(f"""
 <div class="period-card">
