@@ -260,6 +260,7 @@ base_filtered = df[(df["FechaDia"] >= start_date) & (df["FechaDia"] <= end_date)
 
 selected_plataforma = st.sidebar.selectbox("Plataforma", ["Todas"] + sorted(base_filtered["Plataforma"].unique().tolist()))
 selected_transportista = st.sidebar.selectbox("Transportista", ["Todos"] + sorted(base_filtered["Transportista"].unique().tolist()))
+selected_planta = st.sidebar.selectbox("Planta", ["Todas"] + sorted(base_filtered["Planta"].unique().tolist()))
 selected_incidente = st.sidebar.selectbox("Incidente", ["Todos"] + sorted(base_filtered["Incidente"].unique().tolist()))
 selected_conductor = st.sidebar.selectbox("Conductor", ["Todos"] + sorted(base_filtered["Conductor"].unique().tolist()))
 search = st.sidebar.text_input("Búsqueda general", placeholder="Patente, planta, texto...").strip().lower()
@@ -269,6 +270,8 @@ if selected_plataforma != "Todas":
     filtered = filtered[filtered["Plataforma"] == selected_plataforma]
 if selected_transportista != "Todos":
     filtered = filtered[filtered["Transportista"] == selected_transportista]
+if selected_planta != "Todas":
+    filtered = filtered[filtered["Planta"] == selected_planta]
 if selected_incidente != "Todos":
     filtered = filtered[filtered["Incidente"] == selected_incidente]
 if selected_conductor != "Todos":
@@ -306,6 +309,7 @@ st.markdown(f"""
 <b>Periodo activo:</b> {start_date.strftime("%d-%m-%Y")} al {end_date.strftime("%d-%m-%Y")}
 &nbsp; | &nbsp; <b>Datos base:</b> desde 01-01-2026
 &nbsp; | &nbsp; <b>Plataforma:</b> {selected_plataforma}
+&nbsp; | &nbsp; <b>Planta:</b> {selected_planta}
 &nbsp; | &nbsp; <b>Registros filtrados:</b> {len(filtered)}
 </div>
 """, unsafe_allow_html=True)
