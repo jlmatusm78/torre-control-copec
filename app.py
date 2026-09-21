@@ -1,5 +1,7 @@
 import io
-from datetime import date
+from zoneinfo import ZoneInfo
+from datetime import datetime
+from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -8,51 +10,9 @@ from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Torre de Control COPEC", page_icon="🚦", layout="wide", initial_sidebar_state="expanded")
 
-FECHA_MINIMA_DEFAULT = pd.Timestamp("2026-01-01")
 CUMPL_COL = "Conductor se detine mínimo 15 minutos"
 
 COLOR_SEQUENCE=["#2563EB","#0EA5E9","#16A34A","#D97706","#DC2626","#7C3AED","#0891B2","#475569"]
-
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"]{background:linear-gradient(135deg,#020617,#0f172a);}
-[data-testid="stHeader"]{background:rgba(2,6,23,0);}
-.block-container{padding-top:1.8rem;padding-bottom:2rem;}
-[data-testid="stSidebar"]{
-    background:linear-gradient(180deg,#0b1220 0%,#111827 100%)!important;
-    border-right:1px solid #243047!important;
-}
-[data-testid="stSidebar"] *{color:#e5edf8!important;}
-[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{color:#f8fafc!important;}
-[data-testid="stSidebar"] label,[data-testid="stSidebar"] p{color:#cbd5e1!important;}
-[data-testid="stSidebar"] [data-baseweb="select"] > div,
-[data-testid="stSidebar"] [data-baseweb="input"] > div,
-[data-testid="stSidebar"] [data-testid="stDateInput"] input,
-[data-testid="stSidebar"] input{
-    background:#0f172a!important;
-    color:#f8fafc!important;
-    border-color:#334155!important;
-}
-[data-testid="stSidebar"] [data-baseweb="select"] svg{fill:#94a3b8!important;}
-[data-testid="stSidebar"] button{
-    background:#1e293b!important;
-    color:#f8fafc!important;
-    border:1px solid #334155!important;
-}
-[data-testid="stSidebar"] button:hover{border-color:#0ea5e9!important;color:#e0f2fe!important;}
-[data-testid="stSidebar"] hr{border-color:#334155!important;}
-h1,h2,h3,h4,p,label,span,div{color:#f8fafc;}
-.metric-card{background:rgba(17,24,39,.95);border:1px solid #334155;border-radius:18px;padding:18px;min-height:105px;box-shadow:0 12px 30px rgba(0,0,0,.22);}
-.metric-label{color:#94a3b8;font-size:13px;margin-bottom:8px;}
-.metric-value{font-size:28px;font-weight:800;color:#f8fafc;}
-.metric-note{color:#94a3b8;font-size:12px;margin-top:4px;}
-.risk-alto,.risk-medio,.risk-bajo{padding:8px 12px;border-radius:999px;font-weight:800;display:inline-block;}
-.risk-alto{background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.45);color:#fecaca;}
-.risk-medio{background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.45);color:#fde68a;}
-.risk-bajo{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.45);color:#bbf7d0;}
-.period-card{background:rgba(14,165,233,.12);border:1px solid rgba(14,165,233,.45);border-radius:14px;padding:12px 16px;margin:10px 0 16px 0;}
-</style>
-""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_google_sheets():
@@ -75,7 +35,7 @@ def load_google_sheets():
                 temp["Plataforma"] = platform
                 dfs.append(temp)
         except Exception as exc:
-            st.warning(f"No pude leer la hoja '{ws_name}'. Revisa el nombre en Secrets. Detalle: {exc}")
+            raise RuntimeError(f"No se pudo leer la hoja {ws_name}") from exc
     if not dfs:
         st.error("No se pudo cargar GUARDIAN ni FLOTAGO/FlotaGo.")
         st.stop()
@@ -86,9 +46,8 @@ def normalize_data(df):
     if "Fecha" not in df.columns:
         st.error("La base no contiene la columna 'Fecha'.")
         st.stop()
-    df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce", dayfirst=True)
+    df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce", dayfirst=True, format="mixed")
     df = df[df["Fecha"].notna()].copy()
-    df = df[df["Fecha"] >= FECHA_MINIMA_DEFAULT].copy()
     # Homologar nombres habituales para identificar cada evento.
     alias_map = {
         "ID": ["Id", "id", "ID Evento", "ID evento", "Evento ID"],
@@ -128,92 +87,6 @@ def normalize_data(df):
     df["FechaDia"] = df["Fecha"].dt.date
     return df
 
-def risk_score(data):
-    if data.empty:
-        return 0
-    fatigue = data[data["EsFatiga"]]
-    no_cumple = int((fatigue[CUMPL_COL] == "NO").sum())
-    total = len(data)
-    fatigue_events = len(fatigue)
-    unique_drivers = data["Conductor"].replace("", pd.NA).dropna().nunique()
-    total_component = min(total / 300, 1) * 25
-    fatigue_component = min(fatigue_events / 15, 1) * 25
-    non_compliance_component = min(no_cumple / 8, 1) * 35
-    concentration_component = 0
-    if unique_drivers > 0:
-        concentration_component = min(data["Conductor"].value_counts(normalize=True).iloc[0] / 0.35, 1) * 15
-    return round(total_component + fatigue_component + non_compliance_component + concentration_component)
-
-def risk_level(score):
-    if score >= 70:
-        return "ALTO", "risk-alto"
-    if score >= 40:
-        return "MEDIO", "risk-medio"
-    return "BAJO", "risk-bajo"
-
-def metric_card(label, value, note=""):
-    st.markdown(f"""
-    <div class="metric-card">
-      <div class="metric-label">{label}</div>
-      <div class="metric-value">{value}</div>
-      <div class="metric-note">{note}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def driver_ranking(data, top=15):
-    rows = []
-    for idx, (driver, total) in enumerate(data["Conductor"].value_counts().head(top).items(), 1):
-        ddf = data[data["Conductor"] == driver]
-        fat = ddf[ddf["EsFatiga"]]
-        rows.append({
-            "Rank": idx,
-            "Conductor": driver,
-            "Total alertas": int(total),
-            "Principal plataforma": ddf["Plataforma"].value_counts().index[0] if not ddf.empty else "-",
-            "Principal alerta": ddf["Incidente"].value_counts().index[0] if not ddf.empty else "-",
-            "Eventos fatiga": len(fat),
-            "Cumple": int((fat[CUMPL_COL] == "SI").sum()),
-            "No cumple": int((fat[CUMPL_COL] == "NO").sum()),
-        })
-    return pd.DataFrame(rows)
-
-def transportista_ranking(data):
-    rows = []
-    for idx, (transportista, total) in enumerate(data["Transportista"].value_counts().items(), 1):
-        tdf = data[data["Transportista"] == transportista]
-        fat = tdf[tdf["EsFatiga"]]
-        score = risk_score(tdf)
-        level, _ = risk_level(score)
-        rows.append({
-            "Rank": idx,
-            "Transportista": transportista,
-            "Alertas": int(total),
-            "Principal plataforma": tdf["Plataforma"].value_counts().index[0] if not tdf.empty else "-",
-            "Eventos fatiga": len(fat),
-            "No cumple fatiga": int((fat[CUMPL_COL] == "NO").sum()),
-            "Score riesgo": score,
-            "Nivel": level,
-        })
-    return pd.DataFrame(rows)
-
-def executive_insight(data):
-    if data.empty:
-        return "No hay datos para los filtros seleccionados."
-    top_platform = data["Plataforma"].value_counts().index[0]
-    top_alert = data["Incidente"].value_counts().index[0]
-    top_alert_count = int(data["Incidente"].value_counts().iloc[0])
-    top_driver = data["Conductor"].value_counts().index[0]
-    fat = data[data["EsFatiga"]]
-    score = risk_score(data)
-    level, _ = risk_level(score)
-    return (
-        f"Nivel de riesgo **{level}** con score **{score}/100**. "
-        f"La plataforma con mayor volumen es **{top_platform}**. "
-        f"El principal foco es **{top_alert}** con **{top_alert_count} eventos**. "
-        f"El conductor con mayor recurrencia es **{top_driver}**. "
-        f"Fatiga: **{len(fat)} eventos**, **{int((fat[CUMPL_COL]=='SI').sum())} cumple** y **{int((fat[CUMPL_COL]=='NO').sum())} no cumple**."
-    )
-
 def to_excel_bytes(dfs):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -222,380 +95,165 @@ def to_excel_bytes(dfs):
     output.seek(0)
     return output
 
-st.title("🚦 Torre de Control COPEC")
-st.caption("Dashboard operativo de alertas Guardian y FlotaGo · Fuente: Google Sheets · Datos desde 01-01-2026 · Refresco cada 5 minutos.")
 
-with st.sidebar:
-    st.header("Fuente de datos")
-    if st.button("🔄 Actualizar ahora"):
-        st.cache_data.clear()
-        st.rerun()
+st.title('Torre de Control COPEC')
+st.caption('Evolución de alertas · Guardian y FlotaGo · Actualización cada 5 minutos')
 
+if st.sidebar.button('Actualizar datos'):
+    st.cache_data.clear()
+    st.rerun()
 try:
-    raw = load_google_sheets()
-except Exception as exc:
-    st.error("No pude conectar a Google Sheets.")
-    st.write("Revisa que el Sheet esté compartido con la cuenta de servicio, los Secrets y los nombres de hojas.")
-    st.code(str(exc))
+    df = normalize_data(load_google_sheets())
+except Exception:
+    st.error('No se pudo conectar a Google Sheets. Revisa la configuración y los permisos de la cuenta de servicio.')
     st.stop()
-
-df = normalize_data(raw)
 if df.empty:
-    st.warning("No hay datos desde el 1 de enero de 2026.")
+    st.info('No hay registros con fechas válidas.')
     st.stop()
-
-st.sidebar.header("Filtros")
-min_available = max(df["Fecha"].min().date(), date(2026, 1, 1))
-max_available = df["Fecha"].max().date()
-date_range = st.sidebar.date_input("📅 Rango de fechas", value=(min_available, max_available), min_value=min_available, max_value=max_available)
-if isinstance(date_range, tuple) and len(date_range) == 2:
-    start_date, end_date = date_range
-else:
-    start_date, end_date = min_available, max_available
-if start_date > end_date:
-    st.sidebar.error("La fecha inicial no puede ser mayor que la fecha final.")
+today = pd.Timestamp(datetime.now(ZoneInfo('America/Santiago')).date())
+future = int((df.Fecha.dt.normalize() > today).sum())
+df = df[df.Fecha.dt.normalize() <= today].copy()
+if future:
+    st.warning(f'Se excluyeron {future} registros con fechas futuras.')
+if df.empty:
+    st.info('No hay registros hasta la fecha actual.')
     st.stop()
+st.caption(f'Histórico disponible: {df.Fecha.min():%d/%m/%Y} – {df.Fecha.max():%d/%m/%Y}. Cada fila representa una alerta registrada.')
 
-base_filtered = df[(df["FechaDia"] >= start_date) & (df["FechaDia"] <= end_date)].copy()
-
-selected_plataforma = st.sidebar.selectbox("Plataforma", ["Todas"] + sorted(base_filtered["Plataforma"].unique().tolist()))
-selected_transportista = st.sidebar.selectbox("Transportista", ["Todos"] + sorted(base_filtered["Transportista"].unique().tolist()))
-selected_planta = st.sidebar.selectbox("Planta", ["Todas"] + sorted(base_filtered["Planta"].unique().tolist()))
-selected_incidente = st.sidebar.selectbox("Incidente", ["Todos"] + sorted(base_filtered["Incidente"].unique().tolist()))
-selected_conductor = st.sidebar.selectbox("Conductor", ["Todos"] + sorted(base_filtered["Conductor"].unique().tolist()))
-search = st.sidebar.text_input("Búsqueda general", placeholder="Patente, planta, texto...").strip().lower()
-
-filtered = base_filtered.copy()
-if selected_plataforma != "Todas":
-    filtered = filtered[filtered["Plataforma"] == selected_plataforma]
-if selected_transportista != "Todos":
-    filtered = filtered[filtered["Transportista"] == selected_transportista]
-if selected_planta != "Todas":
-    filtered = filtered[filtered["Planta"] == selected_planta]
-if selected_incidente != "Todos":
-    filtered = filtered[filtered["Incidente"] == selected_incidente]
-if selected_conductor != "Todos":
-    filtered = filtered[filtered["Conductor"] == selected_conductor]
+st.sidebar.header('Filtros')
+platform = st.sidebar.selectbox('Plataforma', ['Todas'] + sorted(df.Plataforma.unique()))
+source = df if platform == 'Todas' else df[df.Plataforma == platform]
+carrier = st.sidebar.selectbox('Transportista', ['Todos'] + sorted(source.Transportista.unique()))
+data = source.copy() if carrier == 'Todos' else source[source.Transportista == carrier].copy()
+selected_types = st.sidebar.multiselect('Tipo de alerta', sorted(data.Incidente.unique()), help='Sin selección: todas las alertas.')
+if selected_types:
+    data = data[data.Incidente.isin(selected_types)]
+with st.sidebar.expander('Más filtros'):
+    plant = st.selectbox('Planta', ['Todas'] + sorted(source.Planta.unique()))
+    driver = st.selectbox('Conductor', ['Todos'] + sorted(source.Conductor.unique()))
+    search = st.text_input('Buscar tracto, patente o texto').strip().lower()
+if plant != 'Todas':
+    data = data[data.Planta == plant]
+if driver != 'Todos':
+    data = data[data.Conductor == driver]
 if search:
-    # Si el texto ingresado coincide EXACTAMENTE con un N° de Tracto,
-    # se prioriza esa búsqueda y se muestran únicamente los eventos de ese tracto.
-    # Esto evita que, por ejemplo, buscar "5001" encuentre ese número dentro de
-    # una ID, fecha u otra columna y termine mostrando tractos adicionales.
-    search_clean = search.strip().lower()
-    tracto_normalizado = (
-        filtered["Tracto"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .str.replace(r"\.0$", "", regex=True)
-        .str.lower()
-    )
+    exact = data.Tracto.str.lower().eq(search)
+    data = data[exact] if exact.any() else data[data.astype(str).apply(lambda col: col.str.lower().str.contains(search, regex=False)).any(axis=1)]
 
-    if (tracto_normalizado == search_clean).any():
-        filtered = filtered[tracto_normalizado == search_clean]
-    else:
-        # Si no existe un tracto con coincidencia exacta, se mantiene la
-        # búsqueda general en el resto de los campos del dashboard.
-        search_mask = filtered.apply(
-            lambda row: search_clean in " ".join(
-                "" if pd.isna(value) else str(value) for value in row.values
-            ).lower(),
-            axis=1,
-        )
-        filtered = filtered[search_mask]
-
-st.markdown(f"""
-<div class="period-card">
-<b>Periodo activo:</b> {start_date.strftime("%d-%m-%Y")} al {end_date.strftime("%d-%m-%Y")}
-&nbsp; | &nbsp; <b>Datos base:</b> desde 01-01-2026
-&nbsp; | &nbsp; <b>Plataforma:</b> {selected_plataforma}
-&nbsp; | &nbsp; <b>Planta:</b> {selected_planta}
-&nbsp; | &nbsp; <b>Registros filtrados:</b> {len(filtered)}
-</div>
-""", unsafe_allow_html=True)
-
-fatigue = filtered[filtered["EsFatiga"]]
-fatigue_valid = fatigue[fatigue[CUMPL_COL].isin(["SI","NO"])].copy()
-cumple = int((fatigue_valid[CUMPL_COL] == "SI").sum())
-no_cumple = int((fatigue_valid[CUMPL_COL] == "NO").sum())
-score = risk_score(filtered)
-level, css_class = risk_level(score)
-
-c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
-with c1: metric_card("Total alertas", f"{len(filtered):,}".replace(",", "."), "Eventos filtrados")
-with c2: metric_card("Plataformas", filtered["Plataforma"].nunique(), "Con alertas")
-with c3: metric_card("Transportistas", filtered["Transportista"].nunique(), "Con alertas")
-with c4: metric_card("Conductores", filtered["Conductor"].nunique(), "Con alertas")
-with c5: metric_card("Eventos fatiga", len(fatigue), "Cansancio o fatiga")
-with c6: metric_card("No cumple", no_cumple, "Fatiga sin detención")
-with c7:
-    st.markdown(f'<div class="metric-card"><div class="metric-label">Riesgo</div><div class="metric-value"><span class="{css_class}">{level}</span></div><div class="metric-note">Score {score}/100</div></div>', unsafe_allow_html=True)
-
-st.markdown("### 🧠 Insight ejecutivo")
-st.markdown(executive_insight(filtered))
-
-st.markdown("### 📊 Visualización principal")
-
-g0,g1 = st.columns(2)
-with g0:
-    st.subheader("Alertas por plataforma")
-    counts = filtered["Plataforma"].value_counts()
-    fig = px.bar(counts.reset_index(), x="Plataforma", y="count", labels={"count":"Alertas"}, text_auto=True)
-    fig.update_layout(height=380, margin=dict(l=10,r=10,t=30,b=70))
-    st.plotly_chart(fig, use_container_width=True)
-with g1:
-    st.subheader("Alertas por transportista")
-    counts = filtered["Transportista"].value_counts().head(25)
-    fig = px.bar(counts.reset_index(), x="Transportista", y="count", labels={"count":"Alertas"}, text_auto=True)
-    fig.update_layout(height=380, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
-    st.plotly_chart(fig, use_container_width=True)
-
-st.subheader("Alertas por tracto")
-# IMPORTANTE: Tracto se trata como categoría/texto, nunca como eje numérico.
-tracto_base = filtered.loc[filtered["Tracto"] != "SIN TRACTO", "Tracto"].astype(str).str.strip()
-tracto_counts = (
-    tracto_base
-    .value_counts()
-    .head(20)
-    .rename_axis("Tracto")
-    .reset_index(name="Alertas")
-)
-
-if tracto_counts.empty:
-    st.info("No hay información de tracto para los filtros seleccionados.")
+st.sidebar.header('Comparación')
+mode = st.sidebar.radio('Vista', ['Semanal', 'Mensual', 'Personalizada'])
+if mode == 'Semanal':
+    count = st.sidebar.select_slider('Semanas de evolución', options=[4, 5, 6], value=6)
+    periods = weekly_periods(today, count)
+    current_start, current_end = periods[-1]
+    previous_start, previous_end = periods[-2]
+    average_label = 'Promedio semanal'
+elif mode == 'Mensual':
+    count = st.sidebar.slider('Meses de evolución', 2, 24, 12)
+    months = list(pd.period_range(end=today.to_period('M'), periods=24))[::-1]
+    current_month = st.sidebar.selectbox('Mes a analizar', months, index=1, format_func=lambda p: p.strftime('%m/%Y'))
+    against = st.sidebar.radio('Comparar con', ['Mes anterior', 'Mismo mes del año anterior', 'Elegir mes'])
+    previous_month = current_month - (12 if against == 'Mismo mes del año anterior' else 1)
+    if against == 'Elegir mes':
+        previous_month = st.sidebar.selectbox('Mes de referencia', [p for p in months if p != current_month], format_func=lambda p: p.strftime('%m/%Y'))
+    current_start, current_end = monthly_periods(current_month, 1)[0]
+    previous_start, previous_end = monthly_periods(previous_month, 1)[0]
+    periods = monthly_periods(current_month, count)
+    average_label = 'Promedio mensual'
 else:
-    # El orden de categorías se fija explícitamente para impedir que Plotly
-    # interprete tractos como 5k, 6k, 7k, etc.
-    tracto_counts["Tracto"] = tracto_counts["Tracto"].astype(str)
-    orden_tractos = tracto_counts["Tracto"].tolist()
+    earliest = (today.to_period('M') - 23).start_time.date()
+    latest = today.date()
+    current_range = st.sidebar.date_input('Período actual', (max(earliest, (today - pd.Timedelta(days=28)).date()), (today-pd.Timedelta(days=1)).date()), min_value=earliest, max_value=latest)
+    previous_range = st.sidebar.date_input('Período de referencia', (max(earliest, (today-pd.Timedelta(days=56)).date()), (today-pd.Timedelta(days=29)).date()), min_value=earliest, max_value=latest)
+    if len(current_range) != 2 or len(previous_range) != 2:
+        st.info('Selecciona el inicio y el fin de ambos períodos.')
+        st.stop()
+    current_start, current_end = map(pd.Timestamp, current_range)
+    previous_start, previous_end = map(pd.Timestamp, previous_range)
+    if max(current_start, previous_start) <= min(current_end, previous_end):
+        st.warning('Los períodos se superponen. Elige períodos separados para compararlos.')
+        st.stop()
+    periods = [(d, min(d + pd.Timedelta(days=6), current_end)) for d in pd.date_range(current_start, current_end, freq='7D')]
+    average_label = 'Promedio diario actual'
 
-    fig = px.bar(
-        tracto_counts,
-        x="Tracto",
-        y="Alertas",
-        text="Alertas",
-        labels={"Alertas": "Cantidad de alertas", "Tracto": "N° Tracto"},
-        category_orders={"Tracto": orden_tractos},
-        color_discrete_sequence=["#38BDF8"],
-    )
-    fig.update_traces(
-        textposition="outside",
-        cliponaxis=False,
-        hovertemplate="<b>Tracto %{x}</b><br>Alertas: %{y}<extra></extra>"
-    )
-    fig.update_xaxes(
-        type="category",
-        title_text="N° Tracto",
-        tickfont=dict(size=11, color="#E2E8F0"),
-        title_font=dict(color="#E2E8F0"),
-        tickangle=-45,
-        showgrid=False,
-        categoryorder="array",
-        categoryarray=orden_tractos,
-    )
-    fig.update_yaxes(
-        title_text="Cantidad de alertas",
-        rangemode="tozero",
-        gridcolor="rgba(148,163,184,0.15)",
-        tickfont=dict(color="#CBD5E1"),
-        title_font=dict(color="#E2E8F0"),
-    )
-    fig.update_layout(
-        height=520,
-        margin=dict(l=55, r=35, t=25, b=90),
-        plot_bgcolor="#0B0F19",
-        paper_bgcolor="#0B0F19",
-        font=dict(color="#F8FAFC"),
-        bargap=0.22,
-        showlegend=False,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+current = window(data, current_start, current_end)
+previous = window(data, previous_start, previous_end)
+# Evaluate availability per selected platform, before category filters. An empty
+# selected category can be zero; an absent source period cannot establish zero.
+scopes = [group for _, group in source.groupby('Plataforma')]
+def status(start, end):
+    states = [period_status(group, start, end, today) for group in scopes]
+    return next((s for s in states if s != 'Con registros de referencia'), 'Con registros de referencia')
+current_status, previous_status = status(current_start, current_end), status(previous_start, previous_end)
+comparable = current_status == previous_status == 'Con registros de referencia'
+current_days = (current_end-current_start).days+1
+previous_days = (previous_end-previous_start).days+1
+st.subheader('Qué cambió')
+st.write(f'**Actual:** {current_start:%d/%m/%Y} al {current_end:%d/%m/%Y}  ·  **Referencia:** {previous_start:%d/%m/%Y} al {previous_end:%d/%m/%Y}')
+if not comparable:
+    st.warning(f'Actual: {current_status}. Referencia: {previous_status}. Se muestran los registros disponibles, sin calcular variaciones concluyentes.')
+if current_days != previous_days:
+    st.info(f'Los períodos tienen distinta duración: {current_days} y {previous_days} días. Compara también los promedios diarios.')
 
-g2,g3 = st.columns(2)
-with g2:
-    st.subheader("Top tipos de alerta")
-    counts = filtered["Incidente"].value_counts().head(12)
-    fig = px.bar(counts.reset_index(), x="Incidente", y="count", labels={"count":"Alertas"}, text_auto=True)
-    fig.update_layout(height=420, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
-    st.plotly_chart(fig, use_container_width=True)
-with g3:
-    st.subheader("Conductores críticos")
-    counts = filtered["Conductor"].value_counts().head(15)
-    fig = px.bar(counts.reset_index(), x="count", y="Conductor", orientation="h", labels={"count":"Alertas"}, text_auto=True)
-    fig.update_layout(height=420, yaxis=dict(autorange="reversed"), margin=dict(l=10,r=10,t=30,b=10))
-    st.plotly_chart(fig, use_container_width=True)
-
-g4,g5 = st.columns(2)
-with g4:
-    st.subheader("Fatiga / Somnolencia: Cumple vs No cumple")
-    fat_df = pd.DataFrame({"Estado":["Cumple","No cumple"],"Eventos":[cumple,no_cumple]})
-    fig = px.bar(fat_df, x="Estado", y="Eventos", text="Eventos", color="Estado",
-                 color_discrete_map={"Cumple":"#16A34A","No cumple":"#DC2626"})
-    fig.update_layout(height=420, showlegend=False, margin=dict(l=10,r=10,t=30,b=10))
-    st.plotly_chart(fig, use_container_width=True)
-with g5:
-    st.subheader("Distribución plataforma / alerta")
-    pa = filtered.groupby(["Plataforma","Incidente"]).size().reset_index(name="Alertas").sort_values("Alertas", ascending=False).head(20)
-    fig = px.bar(pa, x="Incidente", y="Alertas", color="Plataforma", barmode="group")
-    fig.update_layout(height=420, xaxis_tickangle=-45, margin=dict(l=10,r=10,t=30,b=120))
-    st.plotly_chart(fig, use_container_width=True)
-
-st.subheader("Alertas por día")
-
-date_index = pd.date_range(start=start_date, end=end_date, freq="D")
-platforms_active = sorted(filtered["Plataforma"].dropna().unique().tolist())
-
-if platforms_active:
-    full_index = pd.MultiIndex.from_product(
-        [date_index, platforms_active],
-        names=["FechaDia", "Plataforma"]
-    )
-
-    daily_counts = (
-        filtered.assign(FechaDia=pd.to_datetime(filtered["FechaDia"], errors="coerce"))
-        .dropna(subset=["FechaDia"])
-        .groupby([pd.Grouper(key="FechaDia", freq="D"), "Plataforma"])
-        .size()
-        .rename("Alertas")
-    )
-
-    daily = daily_counts.reindex(full_index, fill_value=0).reset_index()
+alerts = comparison(previous, current, 'Incidente', comparable)
+carriers = comparison(previous, current, 'Transportista', comparable)
+series = evolution(data, source, periods, today, selected_types)
+for start, end in periods:
+    coverage = status(start, end)
+    series.loc[series.Inicio.eq(start), 'Cobertura'] = coverage
+    if coverage == 'Sin datos de referencia':
+        series.loc[series.Inicio.eq(start), 'Alertas'] = float('nan')
+full_starts = [start for start, end in periods if status(start, end) == 'Con registros de referencia']
+average = sum(len(window(data, start, end)) for start, end in periods if start in full_starts) / len(full_starts) if full_starts else None
+if mode == 'Personalizada':
+    average = len(current) / current_days if comparable else None
+cols = st.columns(4)
+cols[0].metric('Alertas del período actual', len(current) if current_status != 'Sin datos de referencia' else 'Sin datos', delta=f'{len(current)-len(previous):+d} alertas' if comparable else None, delta_color='inverse')
+cols[1].metric('Variación vs. referencia', variation(len(previous), len(current)) if comparable else 'Sin base')
+cols[2].metric(average_label, f'{average:.1f}' if average is not None else 'Sin base')
+if not alerts.empty and comparable and alerts.iloc[0]['Cambio'] > 0:
+    top = alerts.iloc[0]
+    cols[3].metric('Mayor aumento', str(top['Incidente']), f"+{int(top['Cambio'])} alertas", delta_color='inverse')
 else:
-    daily = pd.DataFrame(columns=["FechaDia","Plataforma","Alertas"])
+    cols[3].metric('Mayor aumento', 'Ninguno' if comparable else 'Sin base')
+if comparable:
+    direction = 'aumentaron' if len(current) > len(previous) else 'disminuyeron' if len(current) < len(previous) else 'no cambiaron'
+    st.info(f'Las alertas {direction}: {len(current)} frente a {len(previous)} ({variation(len(previous), len(current))}).')
+st.caption('Los promedios semanales/mensuales consideran solo los períodos con referencia disponible. Los conteos reflejan alertas registradas, no una tasa de riesgo por kilómetros o viajes.')
 
-fig = px.line(
-    daily,
-    x="FechaDia",
-    y="Alertas",
-    color="Plataforma",
-    markers=True,
-    color_discrete_sequence=COLOR_SEQUENCE
-)
-
-fig.update_xaxes(
-    type="date",
-    title_text="Fecha",
-    tickformat="%d-%m",
-    dtick=7 * 24 * 60 * 60 * 1000,
-    tickangle=-45
-)
-
-fig.update_yaxes(title_text="Alertas", rangemode="tozero")
-fig.update_layout(
-    height=420,
-    margin=dict(l=10,r=10,t=30,b=90),
-    hovermode="x unified"
-)
-
+st.subheader('Evolución en el tiempo')
+fig = px.line(series, x='Inicio', y='Alertas', color='Serie', markers=True, hover_data=['Fin', 'Cobertura'], color_discrete_sequence=COLOR_SEQUENCE)
+fig.update_traces(connectgaps=False)
+fig.update_layout(height=400, hovermode='x unified', legend_title_text='Tipo de alerta')
+fig.update_xaxes(title='Semana / mes' if mode != 'Personalizada' else 'Inicio del intervalo', tickformat='%d/%m/%Y')
+fig.update_yaxes(rangemode='tozero', title='Alertas registradas')
 st.plotly_chart(fig, use_container_width=True)
+with st.expander('Ver valores y cobertura de la evolución'):
+    st.dataframe(series, hide_index=True, use_container_width=True)
+st.caption('Sin datos de referencia se muestra como un espacio en el gráfico, nunca como cero. La cobertura se infiere de las fechas de los registros por plataforma; no certifica que la carga esté completa. Un cero indica ausencia de coincidencias dentro de un período con registros de referencia.')
 
+st.subheader('Comparación por tipo de alerta')
+total = pd.DataFrame([{'Incidente':'TOTAL', 'Anterior':len(previous), 'Actual':len(current), 'Cambio':len(current)-len(previous) if comparable else None, 'Variación':variation(len(previous), len(current)) if comparable else 'Sin base comparable'}])
+alert_table = pd.concat([alerts, total], ignore_index=True)
+st.dataframe(alert_table, hide_index=True, use_container_width=True)
+st.write(f'**Promedio diario registrado:** actual {len(current)/current_days:.2f} · referencia {len(previous)/previous_days:.2f}')
 
-st.subheader("Evolución Fatiga / Somnolencia: Cumple vs No cumple")
-if not fatigue_valid.empty:
-    fatigue_evo = fatigue_valid.assign(
-        FechaDia=pd.to_datetime(fatigue_valid["FechaDia"], errors="coerce"),
-        Estado=fatigue_valid[CUMPL_COL].map({"SI":"Cumple","NO":"No cumple"})
-    )
-
-    date_index = pd.date_range(start=start_date, end=end_date, freq="D")
-
-    full_index = pd.MultiIndex.from_product(
-        [date_index, ["Cumple", "No cumple"]],
-        names=["FechaDia", "Estado"]
-    )
-
-    evo_counts = (
-        fatigue_evo
-        .groupby([pd.Grouper(key="FechaDia", freq="D"), "Estado"])
-        .size()
-        .rename("Eventos")
-    )
-
-    evo = evo_counts.reindex(full_index, fill_value=0).reset_index()
-    evo["FechaDia"] = pd.to_datetime(evo["FechaDia"], errors="coerce")
-    evo = evo.sort_values("FechaDia").reset_index(drop=True)
-
-    # Gráfico tipo área + línea, similar a Power BI, con fechas correlativas.
-    fig = px.line(
-        evo,
-        x="FechaDia",
-        y="Eventos",
-        color="Estado",
-        markers=True,
-        color_discrete_map={
-            "Cumple": "#10B981",
-            "No cumple": "#F59E0B",
-        },
-    )
-
-    # Relleno bajo la línea para dar aspecto de área sin perder lectura de tendencia.
-    fig.update_traces(
-        mode="lines+markers",
-        fill="tozeroy",
-        opacity=0.55,
-        line=dict(width=3),
-        marker=dict(size=6),
-    )
-
-    fig.update_xaxes(
-        type="date",
-        title_text="Fecha",
-        tickformat="%d-%m",
-        dtick=7 * 24 * 60 * 60 * 1000,
-        tickangle=-45,
-    )
-
-    fig.update_yaxes(
-        title_text="Eventos",
-        rangemode="tozero",
-    )
-
-    fig.update_layout(
-        height=430,
-        hovermode="x unified",
-        legend_title="Resultado",
-        margin=dict(l=10, r=10, t=30, b=90),
-    )
-
+st.subheader('Dónde se concentra el cambio')
+carriers['Participación actual (%)'] = (carriers.Actual / len(current)*100).round(1) if len(current) else 0.0
+st.dataframe(carriers, hide_index=True, use_container_width=True)
+if comparable and not carriers.empty:
+    chart = carriers.assign(magnitude=carriers.Cambio.abs()).nlargest(15, 'magnitude')
+    fig = px.bar(chart, x='Cambio', y='Transportista', orientation='h', color='Cambio', color_continuous_scale=['#16A34A','#CBD5E1','#DC2626'], color_continuous_midpoint=0)
+    fig.update_layout(height=max(300, len(chart)*30), yaxis={'autorange':'reversed'}, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("### 📋 Tablas ejecutivas")
-tab1,tab2,tab3,tab4,tab5 = st.tabs(["Ranking transportistas","Ranking conductores","Gestión fatiga","Resumen plataforma","Datos filtrados"])
-
-# Columnas de trazabilidad: se mantienen visibles en los detalles después de aplicar cualquier filtro.
-detail_cols = [c for c in ["ID","Fecha","Tracto","Plataforma","Transportista","Conductor","Patente","Planta","Incidente",CUMPL_COL] if c in filtered.columns]
-
-with tab1:
-    tr = transportista_ranking(filtered)
-    st.dataframe(tr, use_container_width=True, hide_index=True)
-    st.caption("Detalle de eventos del ranking según los filtros activos")
-    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-with tab2:
-    dr = driver_ranking(filtered)
-    st.dataframe(dr, use_container_width=True, hide_index=True)
-    st.caption("Detalle de eventos del ranking según los filtros activos")
-    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-with tab3:
-    if fatigue.empty:
-        st.info("No hay eventos de fatiga para los filtros seleccionados.")
-        fs = pd.DataFrame()
-    else:
-        fs = fatigue[detail_cols].sort_values("Fecha", ascending=False).copy()
-        st.dataframe(fs, use_container_width=True, hide_index=True)
-with tab4:
-    ps = filtered.groupby("Plataforma").agg(Alertas=("Incidente","count"), Transportistas=("Transportista","nunique"), Conductores=("Conductor","nunique"), Eventos_fatiga=("EsFatiga","sum")).reset_index()
-    st.dataframe(ps, use_container_width=True, hide_index=True)
-    st.caption("Detalle de eventos por plataforma según los filtros activos")
-    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-with tab5:
-    st.dataframe(filtered[detail_cols].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-
-st.markdown("### ⬇️ Exportar información")
-excel_bytes = to_excel_bytes({
-    "Ranking transportistas": transportista_ranking(filtered),
-    "Ranking conductores": driver_ranking(filtered),
-    "Fatiga": fs if "fs" in locals() else pd.DataFrame(),
-    "Resumen plataforma": ps if "ps" in locals() else pd.DataFrame(),
-    "Datos filtrados": filtered[detail_cols].sort_values("Fecha", ascending=False),
-})
-st.download_button("Descargar Excel con resultados filtrados", data=excel_bytes, file_name=f"dashboard_guardian_flotago_{start_date}_a_{end_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+with st.expander('Detalle de eventos y gestión de fatiga'):
+    fatigue = current[current.EsFatiga]
+    a, b, c = st.columns(3)
+    a.metric('Fatiga: cumple detención', int(fatigue[CUMPL_COL].eq('SI').sum()))
+    b.metric('Fatiga: no cumple', int(fatigue[CUMPL_COL].eq('NO').sum()))
+    c.metric('Fatiga: sin respuesta válida', int((~fatigue[CUMPL_COL].isin(['SI','NO'])).sum()))
+    detail_cols = ['ID','Fecha','Tracto','Plataforma','Transportista','Conductor','Patente','Planta','Incidente',CUMPL_COL]
+    st.dataframe(current[detail_cols].sort_values('Fecha', ascending=False), hide_index=True, use_container_width=True)
+metadata = pd.DataFrame([{'Actual desde':current_start, 'Actual hasta':current_end, 'Referencia desde':previous_start, 'Referencia hasta':previous_end, 'Estado actual':current_status, 'Estado referencia':previous_status, 'Plataforma':platform, 'Transportista':carrier, 'Alertas':', '.join(selected_types) or 'Todas', 'Planta':plant, 'Conductor':driver, 'Búsqueda':search}])
+st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
