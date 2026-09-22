@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 from datetime import datetime
 from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution
 from alert_names import normalize_alerts
+from compliance import compliance_summary, percentage_point_change
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -249,6 +250,8 @@ plot_evolution(series, 'evolution_total')
 st.caption('Sin datos de referencia se muestra como un espacio en el gráfico. La cobertura se infiere de los registros por plataforma y no certifica que la carga esté completa.')
 export_series = [series]
 fatigue_exports = []
+rate_exports = []
+compliance_comparisons = []
 visible_types = selected_types or sorted(data.Incidente.unique())
 for index, kind in enumerate(visible_types):
     st.subheader(kind)
@@ -260,7 +263,7 @@ for index, kind in enumerate(visible_types):
     plot_evolution(individual, f'alert_{index}')
     export_series.append(individual)
     visible_fatigue = window(kind_data[kind_data.EsFatiga], periods[0][0], periods[-1][1])
-    if not visible_fatigue.empty:
+    if not visible_fatigue.empty or not window(kind_data[kind_data.EsFatiga], previous_start, previous_end).empty or not window(kind_data[kind_data.EsFatiga], current_start, current_end).empty:
         st.markdown('**Cumplimiento de detención · ' + kind + '**')
         compliance = kind_data[kind_data.EsFatiga].copy()
         compliance['Incidente'] = compliance[CUMPL_COL].map({'SI':'Cumple', 'NO':'No cumple'})
@@ -269,6 +272,51 @@ for index, kind in enumerate(visible_types):
         missing = int((~visible_fatigue[CUMPL_COL].isin(['SI', 'NO'])).sum())
         st.caption(f'Sin información de cumplimiento: {missing} eventos en la evolución mostrada. No se incluyen en Cumple ni No cumple.')
         fatigue_exports.append(compliance_series.assign(Alerta=kind))
+        actual_stats = compliance_summary(window(kind_data, current_start, current_end), CUMPL_COL)
+        reference_stats = compliance_summary(window(kind_data, previous_start, previous_end), CUMPL_COL)
+        change_pp = percentage_point_change(reference_stats, actual_stats, comparable)
+        rate = actual_stats['Cumplimiento (%)']
+        reference_rate = reference_stats['Cumplimiento (%)']
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric('Cumplimiento actual', f'{rate:.1f} %' if rate is not None else 'Sin información',
+                  delta=f'{change_pp:+.1f} puntos porcentuales' if change_pp is not None else None)
+        k2.metric('Cumplimiento de referencia', f'{reference_rate:.1f} %' if reference_rate is not None else 'Sin información')
+        no_delta = actual_stats['No cumple'] - reference_stats['No cumple']
+        k3.metric('No cumple · actual', actual_stats['No cumple'],
+                  delta=f"{no_delta:+d} ({variation(reference_stats['No cumple'], actual_stats['No cumple'])})" if change_pp is not None else None,
+                  delta_color='inverse')
+        k4.metric('Sin información · actual', actual_stats['Sin información'])
+        st.caption(f"Respuestas válidas: actual {actual_stats['Válidos']} · referencia {reference_stats['Válidos']}. No cumple de referencia: {reference_stats['No cumple']}. Sin información de referencia: {reference_stats['Sin información']}.")
+        if change_pp is not None:
+            movement = 'subió' if change_pp > 0 else 'bajó' if change_pp < 0 else 'se mantuvo'
+            st.info(f'El cumplimiento {movement}: {reference_rate:.1f} % → {rate:.1f} % ({change_pp:+.1f} puntos porcentuales).')
+        else:
+            st.info('Sin base comparable de cumplimiento: faltan respuestas válidas o alguno de los períodos tiene cobertura parcial.')
+        rate_rows = []
+        for start, end in periods:
+            stats = compliance_summary(window(kind_data, start, end), CUMPL_COL)
+            coverage = status(start, end)
+            if coverage == 'Sin datos de referencia':
+                stats['Cumplimiento (%)'] = None
+            rate_rows.append({'Inicio': start, 'Fin': end, 'Cobertura': coverage, 'Alerta': kind, **stats})
+        rates = pd.DataFrame(rate_rows)
+        st.markdown('**Evolución del porcentaje de cumplimiento**')
+        rate_fig = px.line(rates, x='Inicio', y='Cumplimiento (%)', markers=True,
+                           hover_data=['Fin', 'Cumple', 'No cumple', 'Válidos', 'Sin información', 'Cobertura'],
+                           color_discrete_sequence=['#16A34A'])
+        rate_fig.update_traces(connectgaps=False, text=rates['Cumplimiento (%)'].map(lambda x: f'{x:.1f} %' if pd.notna(x) else ''),
+                               mode='lines+markers+text', textposition='bottom center')
+        rate_fig.update_yaxes(range=[0, 100], ticksuffix=' %')
+        rate_fig.update_xaxes(title='Inicio del período', tickformat='%d/%m/%Y')
+        rate_fig.update_layout(height=340, hovermode='x unified')
+        st.plotly_chart(rate_fig, use_container_width=True, key=f'compliance_rate_{index}')
+        st.caption('Cumplimiento = Cumple ÷ (Cumple + No cumple). Sin respuestas válidas: Sin información, sin punto en el gráfico. Los períodos parciales muestran solo el porcentaje observado; no se usan para concluir alzas o bajas.')
+        rate_exports.append(rates)
+        compliance_comparisons.extend([
+            {'Alerta':kind, 'Período':'Actual', 'Inicio':current_start, 'Fin':current_end, 'Cobertura':current_status, 'Cambio (pp)':change_pp, **actual_stats},
+            {'Alerta':kind, 'Período':'Referencia', 'Inicio':previous_start, 'Fin':previous_end, 'Cobertura':previous_status, 'Cambio (pp)':None, **reference_stats}
+        ])
+
 series = pd.concat(export_series, ignore_index=True)
 with st.expander('Ver valores y cobertura de la evolución'):
     st.dataframe(series, hide_index=True, use_container_width=True)
@@ -297,4 +345,4 @@ with st.expander('Detalle de eventos y gestión de fatiga'):
     detail_cols = ['ID','Fecha','Tracto','Plataforma','Transportista','Conductor','Patente','Planta','Incidente','Incidente original',CUMPL_COL]
     st.dataframe(current[detail_cols].sort_values('Fecha', ascending=False), hide_index=True, use_container_width=True)
 metadata = pd.DataFrame([{'Actual desde':current_start, 'Actual hasta':current_end, 'Referencia desde':previous_start, 'Referencia hasta':previous_end, 'Estado actual':current_status, 'Estado referencia':previous_status, 'Plataforma':platform, 'Transportista':carrier, 'Alertas':', '.join(selected_types) or 'Todas', 'Planta':plant, 'Conductor':driver, 'Búsqueda':search}])
-st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Evolución cumplimiento':pd.concat(fatigue_exports, ignore_index=True) if fatigue_exports else pd.DataFrame(), 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Evolución cumplimiento':pd.concat(fatigue_exports, ignore_index=True) if fatigue_exports else pd.DataFrame(), 'Tasa cumplimiento':pd.concat(rate_exports, ignore_index=True) if rate_exports else pd.DataFrame(), 'Comparación cumplimiento':pd.DataFrame(compliance_comparisons), 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

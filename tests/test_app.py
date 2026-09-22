@@ -16,7 +16,7 @@ def test_dashboard_modes_and_filters():
     at = AppTest.from_string(source, default_timeout=30).run()
     assert not at.exception
     assert len(at.metric) >= 4
-    assert len(at.get("plotly_chart")) == 5
+    assert len(at.get("plotly_chart")) == 6
     assert any("Sin información de cumplimiento" in c.value for c in at.caption)
     at.sidebar.radio[0].set_value('Mensual').run()
     assert not at.exception
@@ -24,7 +24,7 @@ def test_dashboard_modes_and_filters():
     assert not at.exception
     at.sidebar.multiselect[0].set_value(['Fatiga']).run()
     assert not at.exception
-    assert len(at.get('plotly_chart')) == 4
+    assert len(at.get('plotly_chart')) == 5
     at.sidebar.radio[0].set_value('Personalizada').run()
     assert not at.exception
     at.sidebar.text_input[0].set_value('no-match').run()

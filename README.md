@@ -30,3 +30,7 @@ Para pruebas: instalar `pytest` y ejecutar `python -m pytest -q` desde la raíz.
 El total se muestra primero, seguido de un gráfico por tipo de alerta. Los filtros se aplican a todos los gráficos. Cuando hay eventos de fatiga en la evolución mostrada, se agrega una evolución de Cumple/No cumple; las respuestas no válidas se cuentan aparte. El Excel incluye estas series.
 
 Todas las categorías se unifican ignorando mayúsculas, minúsculas, espacios redundantes y tildes, sin equivalencias entre palabras diferentes. Se conserva Incidente original en el detalle y el Excel.
+
+## Cumplimiento comparativo de fatiga
+
+Cada alerta de fatiga incluye porcentaje actual y de referencia, diferencia en puntos porcentuales, cantidad y variación de No cumple, y respuestas sin información. La tasa es SI/(SI+NO); respuestas vacías o no válidas se excluyen. Sin respuestas válidas no se dibuja un punto ni se interpreta como 0 %. Las comparaciones requieren cobertura comparable y respuestas válidas en ambos períodos. Las tasas de períodos parciales se etiquetan como observadas. El Excel agrega Tasa cumplimiento y Comparación cumplimiento.
