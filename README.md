@@ -24,3 +24,9 @@ Los conteos de tablas y detalles son registros observados, incluso cuando la cob
 Usar Python 3.11 o superior, instalar `requirements.txt` y ejecutar `streamlit run app.py`. Configurar las credenciales de Sheets como explica `DEPLOYMENT.md`; no subir secretos al repositorio.
 
 Para pruebas: instalar `pytest` y ejecutar `python -m pytest -q` desde la raíz. Las pruebas de interfaz inyectan datos sintéticos, sin conectarse a Google Sheets.
+
+## Evolución por alerta
+
+El total se muestra primero, seguido de un gráfico por tipo de alerta. Los filtros se aplican a todos los gráficos. Cuando hay eventos de fatiga en la evolución mostrada, se agrega una evolución de Cumple/No cumple; las respuestas no válidas se cuentan aparte. El Excel incluye estas series.
+
+Todas las categorías se unifican ignorando mayúsculas, minúsculas, espacios redundantes y tildes, sin equivalencias entre palabras diferentes. Se conserva Incidente original en el detalle y el Excel.

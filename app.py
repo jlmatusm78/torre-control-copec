@@ -1,7 +1,7 @@
 import io
 from zoneinfo import ZoneInfo
 from datetime import datetime
-from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution
+from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution, normalize_alerts
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -69,7 +69,8 @@ def normalize_data(df):
     df["Plataforma"] = df["Plataforma"].replace("", "SIN PLATAFORMA")
     df["Transportista"] = df["Transportista"].replace("", "SIN TRANSPORTISTA IDENTIFICADO")
     df["Conductor"] = df["Conductor"].replace("", "SIN CONDUCTOR")
-    df["Incidente"] = df["Incidente"].replace("", "SIN CLASIFICAR")
+    df["Incidente original"] = df["Incidente"].copy()
+    df["Incidente"] = normalize_alerts(df["Incidente"])
     df["Planta"] = df["Planta"].replace("", "SIN PLANTA")
     df["Patente"] = df["Patente"].replace("", "SIN PATENTE")
     df["ID"] = df["ID"].replace("", "SIN ID")
@@ -197,7 +198,7 @@ if current_days != previous_days:
 
 alerts = comparison(previous, current, 'Incidente', comparable)
 carriers = comparison(previous, current, 'Transportista', comparable)
-series = evolution(data, source, periods, today, selected_types)
+series = evolution(data, source, periods, today)
 for start, end in periods:
     coverage = status(start, end)
     series.loc[series.Inicio.eq(start), 'Cobertura'] = coverage
@@ -221,16 +222,55 @@ if comparable:
     st.info(f'Las alertas {direction}: {len(current)} frente a {len(previous)} ({variation(len(previous), len(current))}).')
 st.caption('Los promedios semanales/mensuales consideran solo los períodos con referencia disponible. Los conteos reflejan alertas registradas, no una tasa de riesgo por kilómetros o viajes.')
 
-st.subheader('Evolución en el tiempo')
-fig = px.line(series, x='Inicio', y='Alertas', color='Serie', markers=True, hover_data=['Fin', 'Cobertura'], color_discrete_sequence=COLOR_SEQUENCE)
-fig.update_traces(connectgaps=False)
-fig.update_layout(height=400, hovermode='x unified', legend_title_text='Tipo de alerta')
-fig.update_xaxes(title='Semana / mes' if mode != 'Personalizada' else 'Inicio del intervalo', tickformat='%d/%m/%Y')
-fig.update_yaxes(rangemode='tozero', title='Alertas registradas')
-st.plotly_chart(fig, use_container_width=True)
+def covered_series(sample, types=None):
+    result = evolution(sample, source, periods, today, types)
+    for start, end in periods:
+        coverage = status(start, end)
+        result.loc[result.Inicio.eq(start), 'Cobertura'] = coverage
+        if coverage == 'Sin datos de referencia':
+            result.loc[result.Inicio.eq(start), 'Alertas'] = float('nan')
+    return result
+
+
+def plot_evolution(values, chart_key, colors=None):
+    fig = px.line(values, x='Inicio', y='Alertas', color='Serie', markers=True,
+                  text='Alertas', hover_data=['Fin', 'Cobertura'],
+                  color_discrete_map=colors, color_discrete_sequence=COLOR_SEQUENCE)
+    fig.update_traces(connectgaps=False, textposition='top center')
+    fig.update_layout(height=340, hovermode='x unified', legend_title_text='')
+    fig.update_xaxes(title='Inicio del período', tickformat='%d/%m/%Y')
+    fig.update_yaxes(rangemode='tozero', title='Alertas registradas')
+    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+
+
+st.subheader('Evolución general')
+plot_evolution(series, 'evolution_total')
+st.caption('Sin datos de referencia se muestra como un espacio en el gráfico. La cobertura se infiere de los registros por plataforma y no certifica que la carga esté completa.')
+export_series = [series]
+fatigue_exports = []
+visible_types = selected_types or sorted(data.Incidente.unique())
+for index, kind in enumerate(visible_types):
+    st.subheader(kind)
+    kind_data = data[data.Incidente.eq(kind)]
+    current_count = int(current.Incidente.eq(kind).sum())
+    previous_count = int(previous.Incidente.eq(kind).sum())
+    st.write(f'Actual: **{current_count}** · Referencia: **{previous_count}** · Cambio: **{current_count-previous_count:+d} ({variation(previous_count, current_count)})**' if comparable else f'Registros actuales: **{current_count}** · Referencia: **{previous_count}** · Sin base comparable')
+    individual = covered_series(kind_data, [kind])
+    plot_evolution(individual, f'alert_{index}')
+    export_series.append(individual)
+    visible_fatigue = window(kind_data[kind_data.EsFatiga], periods[0][0], periods[-1][1])
+    if not visible_fatigue.empty:
+        st.markdown('**Cumplimiento de detención · ' + kind + '**')
+        compliance = kind_data[kind_data.EsFatiga].copy()
+        compliance['Incidente'] = compliance[CUMPL_COL].map({'SI':'Cumple', 'NO':'No cumple'})
+        compliance_series = covered_series(compliance, ['Cumple', 'No cumple'])
+        plot_evolution(compliance_series, f'compliance_{index}', {'Cumple':'#16A34A', 'No cumple':'#DC2626'})
+        missing = int((~visible_fatigue[CUMPL_COL].isin(['SI', 'NO'])).sum())
+        st.caption(f'Sin información de cumplimiento: {missing} eventos en la evolución mostrada. No se incluyen en Cumple ni No cumple.')
+        fatigue_exports.append(compliance_series.assign(Alerta=kind))
+series = pd.concat(export_series, ignore_index=True)
 with st.expander('Ver valores y cobertura de la evolución'):
     st.dataframe(series, hide_index=True, use_container_width=True)
-st.caption('Sin datos de referencia se muestra como un espacio en el gráfico, nunca como cero. La cobertura se infiere de las fechas de los registros por plataforma; no certifica que la carga esté completa. Un cero indica ausencia de coincidencias dentro de un período con registros de referencia.')
 
 st.subheader('Comparación por tipo de alerta')
 total = pd.DataFrame([{'Incidente':'TOTAL', 'Anterior':len(previous), 'Actual':len(current), 'Cambio':len(current)-len(previous) if comparable else None, 'Variación':variation(len(previous), len(current)) if comparable else 'Sin base comparable'}])
@@ -253,7 +293,7 @@ with st.expander('Detalle de eventos y gestión de fatiga'):
     a.metric('Fatiga: cumple detención', int(fatigue[CUMPL_COL].eq('SI').sum()))
     b.metric('Fatiga: no cumple', int(fatigue[CUMPL_COL].eq('NO').sum()))
     c.metric('Fatiga: sin respuesta válida', int((~fatigue[CUMPL_COL].isin(['SI','NO'])).sum()))
-    detail_cols = ['ID','Fecha','Tracto','Plataforma','Transportista','Conductor','Patente','Planta','Incidente',CUMPL_COL]
+    detail_cols = ['ID','Fecha','Tracto','Plataforma','Transportista','Conductor','Patente','Planta','Incidente','Incidente original',CUMPL_COL]
     st.dataframe(current[detail_cols].sort_values('Fecha', ascending=False), hide_index=True, use_container_width=True)
 metadata = pd.DataFrame([{'Actual desde':current_start, 'Actual hasta':current_end, 'Referencia desde':previous_start, 'Referencia hasta':previous_end, 'Estado actual':current_status, 'Estado referencia':previous_status, 'Plataforma':platform, 'Transportista':carrier, 'Alertas':', '.join(selected_types) or 'Todas', 'Planta':plant, 'Conductor':driver, 'Búsqueda':search}])
-st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Evolución cumplimiento':pd.concat(fatigue_exports, ignore_index=True) if fatigue_exports else pd.DataFrame(), 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

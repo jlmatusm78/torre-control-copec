@@ -39,3 +39,13 @@ def test_missing_not_zero_and_partial():
     result = evolution(source.iloc[:0],source,[(pd.Timestamp('2025-01-08'),pd.Timestamp('2025-01-14')),(pd.Timestamp('2025-01-15'),pd.Timestamp('2025-01-21'))],'2025-02-01')
     assert pd.isna(result.iloc[0].Alertas)
     assert result.iloc[1].Alertas == 0
+
+
+def test_all_alert_spelling_variants():
+    from evolution import normalize_alerts
+    values = pd.Series(['Sensor Tapado', 'SENSOR TAPADO', ' sensor  tapado ', 'DISTRACCIÓN', 'distraccion', 'CANSANCIO O FATIGA', 'Cansancio o fatiga', 'Sensor desalineado'])
+    result = normalize_alerts(values)
+    assert result.iloc[:3].tolist() == ['Sensor tapado'] * 3
+    assert result.iloc[3] == result.iloc[4] == 'Distracción'
+    assert result.iloc[5] == result.iloc[6] == 'Cansancio o fatiga'
+    assert result.nunique() == 4
