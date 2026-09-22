@@ -1,7 +1,8 @@
 import io
 from zoneinfo import ZoneInfo
 from datetime import datetime
-from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution, normalize_alerts
+from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution
+from alert_names import normalize_alerts
 import pandas as pd
 import plotly.express as px
 import streamlit as st

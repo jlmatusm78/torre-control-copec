@@ -42,7 +42,7 @@ def test_missing_not_zero_and_partial():
 
 
 def test_all_alert_spelling_variants():
-    from evolution import normalize_alerts
+    from alert_names import normalize_alerts
     values = pd.Series(['Sensor Tapado', 'SENSOR TAPADO', ' sensor  tapado ', 'DISTRACCIÓN', 'distraccion', 'CANSANCIO O FATIGA', 'Cansancio o fatiga', 'Sensor desalineado'])
     result = normalize_alerts(values)
     assert result.iloc[:3].tolist() == ['Sensor tapado'] * 3
