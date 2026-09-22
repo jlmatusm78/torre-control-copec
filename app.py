@@ -4,6 +4,7 @@ from datetime import datetime
 from evolution import window, period_status, variation, comparison, weekly_periods, monthly_periods, evolution
 from alert_names import normalize_alerts
 from compliance import compliance_summary, percentage_point_change
+from month_comparison import monthly_changes, BASE, MONTHS
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -50,6 +51,7 @@ def normalize_data(df):
         st.stop()
     df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce", dayfirst=True, format="mixed")
     df = df[df["Fecha"].notna()].copy()
+    df = df[df["Fecha"] >= BASE].copy()
     # Homologar nombres habituales para identificar cada evento.
     alias_map = {
         "ID": ["Id", "id", "ID Evento", "ID evento", "Evento ID"],
@@ -152,19 +154,19 @@ if mode == 'Semanal':
     previous_start, previous_end = periods[-2]
     average_label = 'Promedio semanal'
 elif mode == 'Mensual':
-    count = st.sidebar.slider('Meses de evolución', 2, 24, 12)
-    months = list(pd.period_range(end=today.to_period('M'), periods=24))[::-1]
-    current_month = st.sidebar.selectbox('Mes a analizar', months, index=1, format_func=lambda p: p.strftime('%m/%Y'))
-    against = st.sidebar.radio('Comparar con', ['Mes anterior', 'Mismo mes del año anterior', 'Elegir mes'])
-    previous_month = current_month - (12 if against == 'Mismo mes del año anterior' else 1)
-    if against == 'Elegir mes':
-        previous_month = st.sidebar.selectbox('Mes de referencia', [p for p in months if p != current_month], format_func=lambda p: p.strftime('%m/%Y'))
+    months = list(pd.period_range(start=BASE, end=today.to_period('M'), freq='M'))[::-1]
+    current_month = st.sidebar.selectbox('Último mes a mostrar', months, index=0,
+                                       format_func=lambda p: f'{MONTHS[p.month-1]} {p.year}')
+    available = min(24, len(pd.period_range(start=BASE, end=current_month, freq='M')))
+    count = st.sidebar.slider('Meses de evolución', 1, available, available) if available > 1 else 1
+    previous_month = current_month - 1
     current_start, current_end = monthly_periods(current_month, 1)[0]
     previous_start, previous_end = monthly_periods(previous_month, 1)[0]
     periods = monthly_periods(current_month, count)
+    st.sidebar.caption('Cada mes frente al anterior · Enero 2026 es el mes base. El mes en curso no genera una comparación concluyente.')
     average_label = 'Promedio mensual'
 else:
-    earliest = (today.to_period('M') - 23).start_time.date()
+    earliest = max(BASE.date(), (today.to_period('M') - 23).start_time.date())
     latest = today.date()
     current_range = st.sidebar.date_input('Período actual', (max(earliest, (today - pd.Timedelta(days=28)).date()), (today-pd.Timedelta(days=1)).date()), min_value=earliest, max_value=latest)
     previous_range = st.sidebar.date_input('Período de referencia', (max(earliest, (today-pd.Timedelta(days=56)).date()), (today-pd.Timedelta(days=29)).date()), min_value=earliest, max_value=latest)
@@ -192,7 +194,7 @@ comparable = current_status == previous_status == 'Con registros de referencia'
 current_days = (current_end-current_start).days+1
 previous_days = (previous_end-previous_start).days+1
 st.subheader('Qué cambió')
-st.write(f'**Actual:** {current_start:%d/%m/%Y} al {current_end:%d/%m/%Y}  ·  **Referencia:** {previous_start:%d/%m/%Y} al {previous_end:%d/%m/%Y}')
+st.write('**Enero 2026 · Mes base, sin referencia anterior.**') if mode == 'Mensual' and current_start == BASE else st.write(f'**Actual:** {current_start:%d/%m/%Y} al {current_end:%d/%m/%Y}  ·  **Referencia:** {previous_start:%d/%m/%Y} al {previous_end:%d/%m/%Y}')
 if not comparable:
     st.warning(f'Actual: {current_status}. Referencia: {previous_status}. Se muestran los registros disponibles, sin calcular variaciones concluyentes.')
 if current_days != previous_days:
@@ -245,8 +247,22 @@ def plot_evolution(values, chart_key, colors=None):
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 
+monthly_exports = []
+def show_monthly(sample, name, fatigue=False):
+    if mode != 'Mensual':
+        return
+    table = monthly_changes(sample, periods, status, CUMPL_COL if fatigue else None)
+    if fatigue:
+        columns = ['Mes', 'Cumple', 'No cumple', 'Sin información', 'Cumplimiento (%)', 'Comparación cumplimiento', 'Cobertura']
+    else:
+        columns = ['Mes', 'Alertas', 'Cambio', 'Vs. mes anterior', 'Promedio diario', 'Cobertura']
+    st.markdown('**Comparación con el mes anterior**')
+    st.dataframe(table[columns], hide_index=True, use_container_width=True)
+    monthly_exports.append(table.assign(Serie=name))
+
 st.subheader('Evolución general')
 plot_evolution(series, 'evolution_total')
+show_monthly(data, 'Total')
 st.caption('Sin datos de referencia se muestra como un espacio en el gráfico. La cobertura se infiere de los registros por plataforma y no certifica que la carga esté completa.')
 export_series = [series]
 fatigue_exports = []
@@ -262,6 +278,7 @@ for index, kind in enumerate(visible_types):
     individual = covered_series(kind_data, [kind])
     plot_evolution(individual, f'alert_{index}')
     export_series.append(individual)
+    show_monthly(kind_data, kind)
     visible_fatigue = window(kind_data[kind_data.EsFatiga], periods[0][0], periods[-1][1])
     if not visible_fatigue.empty or not window(kind_data[kind_data.EsFatiga], previous_start, previous_end).empty or not window(kind_data[kind_data.EsFatiga], current_start, current_end).empty:
         st.markdown('**Cumplimiento de detención · ' + kind + '**')
@@ -312,6 +329,7 @@ for index, kind in enumerate(visible_types):
         st.plotly_chart(rate_fig, use_container_width=True, key=f'compliance_rate_{index}')
         st.caption('Cumplimiento = Cumple ÷ (Cumple + No cumple). Sin respuestas válidas: Sin información, sin punto en el gráfico. Los períodos parciales muestran solo el porcentaje observado; no se usan para concluir alzas o bajas.')
         rate_exports.append(rates)
+        show_monthly(kind_data, kind + ' · Cumplimiento', fatigue=True)
         compliance_comparisons.extend([
             {'Alerta':kind, 'Período':'Actual', 'Inicio':current_start, 'Fin':current_end, 'Cobertura':current_status, 'Cambio (pp)':change_pp, **actual_stats},
             {'Alerta':kind, 'Período':'Referencia', 'Inicio':previous_start, 'Fin':previous_end, 'Cobertura':previous_status, 'Cambio (pp)':None, **reference_stats}
@@ -345,4 +363,4 @@ with st.expander('Detalle de eventos y gestión de fatiga'):
     detail_cols = ['ID','Fecha','Tracto','Plataforma','Transportista','Conductor','Patente','Planta','Incidente','Incidente original',CUMPL_COL]
     st.dataframe(current[detail_cols].sort_values('Fecha', ascending=False), hide_index=True, use_container_width=True)
 metadata = pd.DataFrame([{'Actual desde':current_start, 'Actual hasta':current_end, 'Referencia desde':previous_start, 'Referencia hasta':previous_end, 'Estado actual':current_status, 'Estado referencia':previous_status, 'Plataforma':platform, 'Transportista':carrier, 'Alertas':', '.join(selected_types) or 'Todas', 'Planta':plant, 'Conductor':driver, 'Búsqueda':search}])
-st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Evolución cumplimiento':pd.concat(fatigue_exports, ignore_index=True) if fatigue_exports else pd.DataFrame(), 'Tasa cumplimiento':pd.concat(rate_exports, ignore_index=True) if rate_exports else pd.DataFrame(), 'Comparación cumplimiento':pd.DataFrame(compliance_comparisons), 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+st.download_button('Descargar comparación y detalle en Excel', data=to_excel_bytes({'Comparación alertas':alert_table, 'Transportistas':carriers, 'Evolución':series, 'Evolución cumplimiento':pd.concat(fatigue_exports, ignore_index=True) if fatigue_exports else pd.DataFrame(), 'Tasa cumplimiento':pd.concat(rate_exports, ignore_index=True) if rate_exports else pd.DataFrame(), 'Comparación cumplimiento':pd.DataFrame(compliance_comparisons), 'Comparación mensual':pd.concat(monthly_exports, ignore_index=True) if monthly_exports else pd.DataFrame(), 'Período actual':current[detail_cols], 'Referencia':previous[detail_cols], 'Filtros y períodos':metadata}), file_name=f'COPEC_evolucion_{current_start:%Y%m%d}_{current_end:%Y%m%d}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

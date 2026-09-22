@@ -4,8 +4,8 @@ Dashboard Streamlit de evolución de alertas Guardian y FlotaGo desde Google She
 
 - Vista inicial: últimas 6 semanas completas (lunes a domingo), con opciones de 4 y 5.
 - Comparación de última semana completa contra la anterior.
-- Vista mensual de 2 a 24 meses: mes anterior, mismo mes del año anterior o mes elegido.
-- Comparación personalizada dentro de los últimos 24 meses, sin períodos superpuestos.
+- Vista mensual desde enero de 2026, hasta 24 meses: cada mes contra el anterior, en tablas bajo el total y cada alerta.
+- Comparación personalizada desde enero de 2026 y dentro de los últimos 24 meses, sin períodos superpuestos.
 - Filtros por plataforma, transportista, una o varias alertas, planta, conductor y búsqueda. Sin tipos seleccionados se muestra el total.
 - Diferencias absolutas y porcentuales, promedios, desglose por alerta y transportista, detalle y gestión de fatiga.
 - Exportación Excel de ambas bases, evolución, comparaciones y filtros.
@@ -13,7 +13,7 @@ Dashboard Streamlit de evolución de alertas Guardian y FlotaGo desde Google She
 
 ## Interpretación
 
-Cada fila es un evento. No se deduplican IDs porque pueden repetirse entre fuentes. El histórico no tiene el antiguo límite de enero de 2026. Las fechas futuras se excluyen; la fecha de referencia usa America/Santiago.
+Cada fila es un evento. No se deduplican IDs porque pueden repetirse entre fuentes. El histórico comienza el 1 de enero de 2026. Las fechas futuras se excluyen; la fecha de referencia usa America/Santiago.
 
 La cobertura se infiere por plataforma antes de filtrar alertas o transportistas. Períodos sin registros de referencia son desconocidos y se dibujan como huecos. Los períodos que exceden el intervalo observado o llegan al presente se identifican como parciales/en curso y no generan porcentajes concluyentes. La existencia de registros no garantiza que la carga esté completa; para certificar ceros se necesitaría una fuente de control de carga.
 
@@ -34,3 +34,7 @@ Todas las categorías se unifican ignorando mayúsculas, minúsculas, espacios r
 ## Cumplimiento comparativo de fatiga
 
 Cada alerta de fatiga incluye porcentaje actual y de referencia, diferencia en puntos porcentuales, cantidad y variación de No cumple, y respuestas sin información. La tasa es SI/(SI+NO); respuestas vacías o no válidas se excluyen. Sin respuestas válidas no se dibuja un punto ni se interpreta como 0 %. Las comparaciones requieren cobertura comparable y respuestas válidas en ambos períodos. Las tasas de períodos parciales se etiquetan como observadas. El Excel agrega Tasa cumplimiento y Comparación cumplimiento.
+
+## Comparación mensual consecutiva
+
+La vista Mensual muestra hasta el mes actual (en curso). Enero 2026 es Mes base, sin comparación con diciembre. Cada fila posterior compara con el mes calendario anterior, aunque quede fuera del rango visible. Los períodos sin referencia, parciales o en curso no generan porcentajes concluyentes. Fatiga incluye tasa y cambio en puntos porcentuales. La exportación incorpora Comparación mensual.

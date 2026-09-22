@@ -20,11 +20,14 @@ def test_dashboard_modes_and_filters():
     assert any("Sin información de cumplimiento" in c.value for c in at.caption)
     at.sidebar.radio[0].set_value('Mensual').run()
     assert not at.exception
-    at.sidebar.radio[1].set_value('Mismo mes del año anterior').run()
-    assert not at.exception
+    assert len(at.sidebar.radio) == 1
+    assert any('Comparación con el mes anterior' in x.value for x in at.markdown)
     at.sidebar.multiselect[0].set_value(['Fatiga']).run()
     assert not at.exception
-    assert len(at.get('plotly_chart')) == 5
+    assert len(at.get('plotly_chart')) == 4
+    at.sidebar.selectbox[-1].set_value(pd.Period('2026-01', freq='M')).run()
+    assert not at.exception
+    assert any('Mes base' in x.value for x in at.markdown)
     at.sidebar.radio[0].set_value('Personalizada').run()
     assert not at.exception
     at.sidebar.text_input[0].set_value('no-match').run()
